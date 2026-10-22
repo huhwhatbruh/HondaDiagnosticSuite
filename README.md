@@ -1,6 +1,6 @@
 <div align="center">
 
-<img width="720" alt="HondaDiagnosticSuite" src="https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/images/spin.gif" />
+<img width="720" alt="HondaDiagnosticSuite" src="images/spin.gif" />
 
 # Honda Diagnostic Suite
 
