@@ -39,33 +39,11 @@ dealer software.
 |---|---|
 | **Confirmed on a real car** | 2015 Honda Accord 2.4 (K24W1, CVT), GODIAG GD101 in J2534 mode: a full scan, codes, live data and a 48-minute recorded drive |
 | **Platform** | Linux (only the Linux build has been run) |
-| **Binary release** | [v0.1.0](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.1.0), Linux x86_64, read-only: scan, codes, live data, history and reports. Two builds, see below |
+| **Binary release** | Coming. The first release will be read-only: scan, codes, live data, history and reports |
 | **Source** | Private for now; access on request (see above) |
 | **Not in the first release** | Clearing codes, bi-directional (actuator) tests and writing functions exist in development but have **never been run on a car**, so they are not offered |
 
 The honest summary: it reads the systems that have been checked, and says "untested" everywhere else. See [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles).
-
-## Download and requirements
-
-Two archives are attached to each release. They hold the same program; they differ only in the system they were built on.
-
-| Archive | Built on | Runs on |
-|---|---|---|
-| `hondascan-0.1.0-linux-x86_64-glibc2.35.tar.gz` | Ubuntu 22.04 | **Use this one.** Any Linux x86_64 with glibc 2.35 or newer (Ubuntu 22.04 and later, Debian 12 and later, Fedora, Arch) |
-| `hondascan-0.1.0-linux-x86_64-glibc2.43.tar.gz` | Arch-based, glibc 2.43 | Only distributions that new (current Arch, CachyOS, Fedora rawhide). Older systems refuse to start it |
-
-Each archive has a matching `.sha256` file.
-
-Nothing needs installing for the app itself: no Python, no Rust, no Wine. What the machine needs:
-
-- A desktop with OpenGL (EGL) and X11 or Wayland: Mesa and the usual `libxkbcommon` are on every desktop distribution.
-- **GODIAG GD101 or another USB adapter:** copy the `60-hondascan.rules` file from the archive into `/etc/udev/rules.d/`, run
-  `sudo udevadm control --reload` and replug the adapter. Without it ModemManager can grab the adapter.
-- **GD101 in J2534 mode:** a C compiler (`cc`, `gcc` or `clang`) must be installed once, to build the small native driver.
-- **Serial and ELM327 adapters:** your user needs the serial group (`dialout` on Debian and Ubuntu, `uucp` on Arch).
-- **SocketCAN adapters:** the interface must be up (`sudo ip link set can0 up type can bitrate 500000`).
-
-Step by step: [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started).
 
 ## Quick look
 
