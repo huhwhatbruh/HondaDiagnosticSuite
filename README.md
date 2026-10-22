@@ -66,8 +66,7 @@ history and reports.
   transmit queues, timeouts), so a bug shows up on the bench rather than on your car.
 - **Read-only by default, allowlisted always.** The scanner can only send a short list of diagnostic services, and never to
   "every ECU at once". Details in [Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety).
-- **Nothing phones home.** Optional, off-by-default [sharing of diagnostics](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Privacy-and-Sharing) exists so other
-  owners can help the project; you read the exact text before anything is sent, and every send asks first.
+- **Nothing phones home.** The scanner talks to your adapter and writes to your own disk, and that is all.
 
 ## Documentation
 
@@ -77,7 +76,6 @@ The [wiki](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki) holds the d
 [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) ·
 [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) ·
 [Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety) ·
-[Privacy and sharing](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Privacy-and-Sharing) ·
 [Contributing a vehicle](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Contributing-a-Vehicle) ·
 [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ) ·
 [Roadmap](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Roadmap)

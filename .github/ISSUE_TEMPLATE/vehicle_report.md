@@ -26,5 +26,5 @@ assignees: ''
 What you ran, what you expected, and what the tool printed.
 
 **Attachments**
-`hondascan telemetry export --out bundle.json` (read it first: no VIN, name or home folder), and optionally a raw capture
-from `--log capture.log`.
+The output of `hondascan scan` and `hondascan dtc` (remove the VIN first), and optionally a raw capture from
+`--log capture.log` (it can contain the VIN: remove it or ask before attaching).
