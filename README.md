@@ -16,7 +16,7 @@ dealer software.
 
 ---
 
-> ### 🚗 I need people with other Honda vehicles
+> ### I need people with other Honda vehicles
 > Right now the tool has been proven on one car. Every new model, engine and year it runs on makes it better for everyone.
 > **[Open a vehicle report](../../issues/new?template=vehicle_report.md)** or let me know, and I will be more than happy to add
 > you to the private repository with the source code.
@@ -25,13 +25,13 @@ dealer software.
 
 | | |
 |---|---|
-| 🔎 **Scan** | Finds every control unit on the car (engine/PGM-FI, transmission, ABS, SRS, meter and more) in under a second. |
-| ⚠️ **Trouble codes** | Reads stored, pending and history codes with plain-English descriptions, plus freeze frame and emissions readiness. |
-| 📈 **Live data** | Named values with units, gauges, and an engine-map view built from what the car reports while you drive. |
-| 🧭 **Drives and history** | Every session is recorded per car: codes that appeared and cleared, trends across drives, fuel economy, misfires and knock. |
-| 🩺 **Health report** | One page that compares the car today with a saved reference snapshot: new codes, resolved codes, tests not yet run. |
-| 💾 **Yours to keep** | Plain JSON export and a `.tar.gz` backup of everything the app has recorded. |
-| 🔌 **Many adapters** | SocketCAN, slcan, J2534, ELM327 and clones, and the GODIAG GD101 through a native Linux driver. |
+| **Scan** | Finds every control unit on the car (engine/PGM-FI, transmission, ABS, SRS, meter and more) in under a second. |
+| **Trouble codes** | Reads stored, pending and history codes with plain-English descriptions, plus freeze frame and emissions readiness. |
+| **Live data** | Named values with units, gauges, and an engine-map view built from what the car reports while you drive. |
+| **Drives and history** | Every session is recorded per car: codes that appeared and cleared, trends across drives, fuel economy, misfires and knock. |
+| **Health report** | One page that compares the car today with a saved reference snapshot: new codes, resolved codes, tests not yet run. |
+| **Yours to keep** | Plain JSON export and a `.tar.gz` backup of everything the app has recorded. |
+| **Many adapters** | SocketCAN, slcan, J2534, ELM327 and clones, and the GODIAG GD101 through a native Linux driver. |
 
 ## Status
 
