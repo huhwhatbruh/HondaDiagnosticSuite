@@ -10,7 +10,7 @@ dealer software.
 
 *We all as consumers have a right to repair. Nothing on a car should be proprietary.*
 
-[Get started](wiki/Getting-Started.md) · [Supported vehicles](wiki/Supported-Vehicles.md) · [Adapters](wiki/Adapters.md) · [Safety](wiki/Safety.md) · [FAQ](wiki/FAQ.md)
+[Get started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
 
 </div>
 
@@ -43,7 +43,7 @@ dealer software.
 | **Source** | Private for now; access on request (see above) |
 | **Not in the first release** | Clearing codes, bi-directional (actuator) tests and writing functions exist in development but have **never been run on a car**, so they are not offered |
 
-The honest summary: it reads the systems that have been checked, and says "untested" everywhere else. See [Supported vehicles](wiki/Supported-Vehicles.md).
+The honest summary: it reads the systems that have been checked, and says "untested" everywhere else. See [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles).
 
 ## Quick look
 
@@ -65,26 +65,26 @@ history and reports.
 - **Strict simulators.** The simulated bus, ELM and J2534 test doubles enforce the real hardware's limits (filters,
   transmit queues, timeouts), so a bug shows up on the bench rather than on your car.
 - **Read-only by default, allowlisted always.** The scanner can only send a short list of diagnostic services, and never to
-  "every ECU at once". Details in [Safety](wiki/Safety.md).
-- **Nothing phones home.** Optional, off-by-default [sharing of diagnostics](wiki/Privacy-and-Sharing.md) exists so other
+  "every ECU at once". Details in [Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety).
+- **Nothing phones home.** Optional, off-by-default [sharing of diagnostics](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Privacy-and-Sharing) exists so other
   owners can help the project; you read the exact text before anything is sent, and every send asks first.
 
 ## Documentation
 
-The [wiki pages](wiki/Home.md) hold the details so this page stays short:
+The [wiki](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki) holds the details so this page stays short:
 
-[Getting started](wiki/Getting-Started.md) ·
-[Supported vehicles](wiki/Supported-Vehicles.md) ·
-[Adapters](wiki/Adapters.md) ·
-[Safety](wiki/Safety.md) ·
-[Privacy and sharing](wiki/Privacy-and-Sharing.md) ·
-[Contributing a vehicle](wiki/Contributing-a-Vehicle.md) ·
-[FAQ](wiki/FAQ.md) ·
-[Roadmap](wiki/Roadmap.md)
+[Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) ·
+[Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) ·
+[Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) ·
+[Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety) ·
+[Privacy and sharing](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Privacy-and-Sharing) ·
+[Contributing a vehicle](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Contributing-a-Vehicle) ·
+[FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ) ·
+[Roadmap](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Roadmap)
 
 ## Help wanted
 
-- **Other Hondas.** Any model or year, any adapter. See [Contributing a vehicle](wiki/Contributing-a-Vehicle.md); a scan and a
+- **Other Hondas.** Any model or year, any adapter. See [Contributing a vehicle](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Contributing-a-Vehicle); a scan and a
   trouble-code read is already valuable.
 - **Other platforms.** Windows and macOS builds have not been tried.
 - **Bug reports and ideas** go in the [issue tracker](../../issues).
