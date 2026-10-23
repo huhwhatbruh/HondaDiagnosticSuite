@@ -1,0 +1,61 @@
+OpenHonda Freeware License
+Version 1.0
+
+Copyright (c) 2026 huhwhatbruh. All rights reserved.
+
+This license applies to the OpenHonda software in binary form
+("the Software"), including hondascan, its desktop app, and the
+bundled GD101 J2534 driver.
+
+1. GRANT
+   You may download, install and use the Software free of charge,
+   for personal or commercial diagnostic use, on any number of
+   your own computers. You may redistribute the unmodified,
+   complete release archive, free of charge, provided this license
+   and THIRD-PARTY-NOTICES.txt stay with it.
+
+2. RESTRICTIONS
+   You may not:
+   a. reverse engineer, decompile, disassemble or otherwise try to
+      derive the source code, algorithms or the contents of the
+      encrypted database, except where applicable law forbids this
+      restriction;
+   b. modify the Software, or create derivative works from it;
+   c. remove or alter copyright notices, or bypass any protection
+      or encryption in the Software;
+   d. sell, rent, lease, sublicense or charge for access to the
+      Software, or bundle it in a paid product, without written
+      permission;
+   e. use the Software on a vehicle you do not own or are not
+      authorized to service.
+
+3. OWNERSHIP
+   The Software is licensed, not sold. All rights not expressly
+   granted are reserved. Third-party components remain under their
+   own licenses, listed in THIRD-PARTY-NOTICES.txt. Honda, HDS and
+   other names are trademarks of their owners; this Software is not
+   affiliated with or endorsed by them.
+
+4. VEHICLE SAFETY AND YOUR RESPONSIBILITY
+   The Software communicates with vehicle control units. Reading is
+   the default; functions that command actuators or write data can
+   change vehicle behavior or damage a control unit. You use them
+   at your own risk, only on a vehicle you own or are authorized to
+   service, and only under the conditions the Software states.
+   Back up before you write.
+
+5. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A
+   PARTICULAR PURPOSE, ACCURACY AND NON-INFRINGEMENT.
+
+6. LIMITATION OF LIABILITY
+   TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE AUTHOR IS NOT LIABLE
+   FOR ANY DAMAGES, INCLUDING DAMAGE TO A VEHICLE OR ITS CONTROL
+   UNITS, LOSS OF DATA, PERSONAL INJURY, OR ANY INDIRECT OR
+   CONSEQUENTIAL LOSS, ARISING FROM USE OF OR INABILITY TO USE THE
+   SOFTWARE.
+
+7. TERMINATION
+   This license ends automatically if you breach it. On
+   termination you must delete all copies of the Software.
