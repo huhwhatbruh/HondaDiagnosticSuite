@@ -58,20 +58,14 @@ pub fn default_paths() -> Vec<PathBuf> {
 }
 
 /// Opens the encrypted `enc_path` as a read-only in-memory sqlite database: no plaintext ever touches a path, a temp
-/// file or a directory entry. Before decrypting it closes the same-user memory-read doors (`dbcrypt::harden_process`).
-/// The plaintext buffer is `mlock`'d for the short window it exists (`dbcrypt::lock_plain`, so it cannot be paged to
-/// swap and read back later) and wiped as soon as sqlite has copied it. A wrong build's file fails the AEAD tag.
+/// file or a directory entry. A damaged file, or one sealed with another build's key, fails the AEAD tag.
 fn open_encrypted(enc_path: &Path) -> Result<Connection, String> {
-    crate::dbcrypt::harden_process();
     let bytes = std::fs::read(enc_path).map_err(|e| format!("{}: {e}", enc_path.display()))?;
-    let mut plain = crate::dbcrypt::decrypt(&bytes).map_err(|e| format!("{}: {e}", enc_path.display()))?;
-    crate::dbcrypt::lock_plain(&mut plain);
+    let plain = crate::dbcrypt::decrypt(&bytes).map_err(|e| format!("{}: {e}", enc_path.display()))?;
     let mut con = Connection::open_in_memory().map_err(|e| e.to_string())?;
     let n = plain.len();
-    let loaded = con.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(&plain[..]), n, true);
-    crate::dbcrypt::wipe(&mut plain);
-    crate::dbcrypt::unlock_plain(&mut plain);
-    loaded.map_err(|e| format!("{}: {e}", enc_path.display()))?;
+    con.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(&plain[..]), n, true)
+        .map_err(|e| format!("{}: {e}", enc_path.display()))?;
     Ok(con)
 }
 
