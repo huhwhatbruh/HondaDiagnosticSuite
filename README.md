@@ -32,7 +32,7 @@ dealer software.
 
 | | |
 |---|---|
-| **Confirmed on a real car** | 2015 Honda Accord 2.4 (K24W1, CVT), GODIAG GD101 in J2534 mode: a full scan, codes, live data and a 48-minute recorded drive |
+| **Confirmed on a real car** | 2015 Honda Accord 2.4 (K24W1, CVT), GODIAG GD101 in J2534 mode: a full scan, trouble codes, live data and recorded drives |
 | **Platform** | Linux (only the Linux build has been run) |
 | **Binary release** | [v0.1.1](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.1.1), Linux x86_64, read-only: scan, codes, live data, history and reports. Two builds, see below |
 | **Source** | In this repository as of v0.1.1: `hondascan/` (scanner, adapters, GODIAG GD101 J2534 driver) and `hondascan-gui/` (desktop app). The vehicle database (`hondascan/data/hondascan.db`, 21 MB) is included, so a clone builds and runs.|
@@ -48,7 +48,7 @@ has not run on a car, this says so.
 **Works on a real car**
 - A full scan: the PCM (engine and CVT answer from the same address), the SRS unit and the instrument cluster.
 - Trouble codes with descriptions, live data with units, freeze frame and emissions readiness.
-- Recording: a 48-minute drive and a 33-minute drive home, stored per car, with trends, fuel economy, misfire and knock views.
+- Recording drives, stored per car, with trends, fuel economy, misfire and knock views.
 - Health report, JSON export, `.tar.gz` backup, and a baseline you can freeze and compare against later.
 - The GD101 through a native Linux driver, with no Wine.
 
