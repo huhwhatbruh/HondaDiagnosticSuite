@@ -35,7 +35,7 @@ diagnostic language. This tool speaks it, to each unit by name.
 
 ## How it got here
 
-I took HDS apart bit by bit completely without ever having to install Microslop Windows.
+I took HDS apart bit by bit completely without ever having to install Microslop WindowsSlopware.
 
 - **Honda's diagnostic logic is bytecode.** I wrote a decompiler for it: 139 modules, 10,021 functions, no opcode left undecoded.
   Every in-scope function was run next to Honda's own interpreter on 127,313 inputs. **9,660 compared, 0 mismatches.**
