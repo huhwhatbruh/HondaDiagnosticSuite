@@ -1,7 +1,3 @@
-<div align="center">
-
-<img width="720" alt="HondaDiagnosticSuite" src="images/spin.gif" />
-
 # Honda Diagnostic Suite
 
 **An open, native Linux diagnostic tool for Honda vehicles.**
