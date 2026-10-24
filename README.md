@@ -88,8 +88,6 @@ cd hondascan && cargo build --release                                 # also bui
 cd hondascan-gui && cargo run --release                               # the desktop app
 ```
 
-The 3D car on the welcome screen is not in this repository, so that screen is empty here. Everything else works.
-
 ## Why should you trust it?
 
 - **Checked by execution** against Honda's own code, not against expectations written by hand.
