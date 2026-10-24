@@ -19,6 +19,9 @@ const FRICTION: f32 = 2.2;       // a throw dies away with this rate a second
 const PITCH: f32 = 17.0;         // resting view from above, degrees; drifts back to it after a drag
 const DIST: f32 = 9.5;           // camera distance, metres
 const HALF_WIDTH: f32 = 3.25;    // metres seen left and right of the car's centre at that distance
+/// Muted slate blue for the body, burnt orange for the interior, greys for tyres and lamps; the baked pack's colours are brighter.
+const PALETTE: [[f32; 3]; 4] = [[0.80, 0.42, 0.14], [0.45, 0.50, 0.58], [0.22, 0.45, 0.80], [0.55, 0.65, 0.80]];
+const CALM: f32 = 0.5;           // lines add up where they cross, so the baked strengths blow out to white; halve them
 const CENTRE_Y: f32 = 0.62;      // the car's middle height
 
 pub type Mat = [f32; 16];            // column-major, as GL wants it
@@ -40,7 +43,7 @@ const FS: &str = "uniform vec3 col; uniform float strength; uniform float scan; 
 void main() {
   float depth = clamp(1.45 - (v_w - 6.0) / 6.0, 0.30, 1.0);
   float band = exp(-pow((v_y - scan) / 0.13, 2.0));
-  o = vec4(col * strength * depth * (1.0 + 2.2 * band), 1.0);
+  o = vec4(col * strength * depth * (1.0 + 0.5 * band), 1.0);
 }";
 
 pub struct Gpu { gl: Arc<glow::Context>, prog: glow::Program, vao: glow::VertexArray, vbo: glow::Buffer, groups: Vec<Group>,
@@ -94,10 +97,10 @@ impl Gpu {
             gl.enable(glow::BLEND);
             gl.blend_equation(glow::FUNC_ADD);
             gl.blend_func(glow::ONE, glow::ONE);   // lines add: where they cross they glow, as a hologram's do
-            for g in &self.groups {
-                let c = if mono { [0.85; 3] } else { g.colour };   // mono: every group plain light grey
+            for (i, g) in self.groups.iter().enumerate() {
+                let c = if mono { [0.85; 3] } else { PALETTE[i.min(3)] };   // mono: every group plain light grey
                 gl.uniform_3_f32(self.col.as_ref(), c[0], c[1], c[2]);
-                gl.uniform_1_f32(self.strength.as_ref(), g.strength * gain);
+                gl.uniform_1_f32(self.strength.as_ref(), g.strength * gain * if mono { 1.0 } else { CALM });
                 gl.draw_arrays(glow::LINES, g.start, g.count);
             }
         }

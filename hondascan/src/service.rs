@@ -671,6 +671,39 @@ impl Service {
     }
 
 
+    /// What a read-only viewer (the phone, phone.rs) shows: `status` without the laptop's folder paths, plus the latest value
+    /// of every signal the recorder has read, each with its catalog description. Reads this process's memory only; no bus traffic.
+    pub fn snapshot(&mut self) -> Value {
+        let mut out = self.status();
+        if let Some(o) = out.as_object_mut() {
+            for k in ["data_dir", "folder"] {
+                o.remove(k);
+            }
+        }
+        let mut signals = self.rec.as_ref().map(|r| r.latest()).unwrap_or_default();
+        // symbol -> description, once per system (the first signal with that symbol), not once per signal: a catalog is large
+        let mut described: std::collections::HashMap<String, std::collections::HashMap<String, String>> = Default::default();
+        for s in signals.iter_mut() {
+            let system = s["system"].as_str().unwrap_or("").to_string();
+            let by_symbol = match described.get(&system) {
+                Some(m) => m,
+                None => {
+                    let cat = self.catalog(&system);
+                    let mut m = std::collections::HashMap::new();
+                    for c in cat["dids"].as_array().into_iter().flatten().filter_map(|g| g["signals"].as_array()).flatten() {
+                        if let (Some(sym), Some(d)) = (c["symbol"].as_str(), c["description"].as_str()) {
+                            m.entry(sym.to_string()).or_insert_with(|| d.to_string());
+                        }
+                    }
+                    described.entry(system.clone()).or_insert(m)
+                }
+            };
+            s["description"] = json!(s["symbol"].as_str().and_then(|sym| by_symbol.get(sym)));
+        }
+        out["signals"] = json!(signals);
+        out
+    }
+
     // -- maintenance --------------------------------------------------------------------------
     /// This car's frozen baselines and service markers (maintenance.rs). Reads the store only; it does not touch the car.
     pub fn maintenance(&mut self, vin: &str) -> Result<Value, ServiceError> {

@@ -7,7 +7,7 @@
 //!
 //! Methods: hello, ports, connect {adapter}, disconnect, scan {addresses?}, dtcs {address, system}, clear {address, system,
 //! confirm: true}, catalog {system}, live {address, system, dids?}, read {address, did}, ecu_info {address, system}, status,
-//! vehicles, vehicle {vin}, session {id}, maintenance {vin}, baseline_freeze {vin, label?}, marker_add {vin, kind, note,
+//! snapshot (status plus the latest value of every signal read; memory only, for the phone gateway, phone.rs), vehicles, vehicle {vin}, session {id}, maintenance {vin}, baseline_freeze {vin, label?}, marker_add {vin, kind, note,
 //! mileage_km?}, marker_remove {id}, self_check, health_report {vin?, save?}, export {out?}, audit {vin?, limit?},
 //! memory_read, memory_probe, ram_watch,
 //! actuator_tests, actuator_start, actuator_stop, actuator_status, write_functions,
@@ -203,6 +203,10 @@ impl Session {
             "status" => {
                 a.done()?;
                 s.status()
+            }
+            "snapshot" => {
+                a.done()?;
+                s.snapshot()
             }
             "vehicles" => {
                 a.done()?;
