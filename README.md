@@ -15,7 +15,6 @@ dealer software.
 > ### I need people with other Honda vehicles
 > Right now the tool has been proven on one car. Every new model, engine and year it runs on makes it better for everyone.
 > **[Open a vehicle report](../../issues/new?template=vehicle_report.md)**. The source is in this repository
-> (see [SOURCE.md](SOURCE.md)), and pull requests are welcome.
 
 ## What it does
 
