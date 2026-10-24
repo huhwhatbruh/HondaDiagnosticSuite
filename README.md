@@ -101,6 +101,39 @@ it, not by trusting it.
 - **One real car, measured.** Live on a 2015 Accord, the PCM's memory-read gate turned out to be a permanent calibration bit, which
   ended a whole line of work and is written down as a negative result.
 
+## Field notes from the car
+
+Every number here was measured on the Accord and logged; none is assumed. Longer write-ups are in the
+[wiki](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/How-It-Was-Built).
+
+- **A long drive, 44,149 reads.** 135 failed, and every one of them was the same 27 data groups the car refuses (asked five times
+  each). A refusal is the car saying "not here", not a fault, and the tool shows it that way. Reply times: the CVT answers in 3 to
+  11 ms, the engine computer in 1 to 49 ms, the instrument cluster in about 100 ms, and the SRS unit as slowly as 220 ms. That last
+  one is why the timeout cannot be lowered.
+- **Three misfires and no trouble code.** On a drive home the engine counted three misfires, cylinder 3 once and cylinder 1 twice,
+  and set no code. All three fell inside bursts of knock retard (12.0, 6.5 and 11.5 degrees within 15 seconds). Knock retard climbs
+  with revs: 0.01 degrees below 1,000 rpm, 2.2 at 2,500, 5.5 at 3,500, 9.4 at 5,500. The long-term fuel trim stayed at 0.96 to 0.99, so it
+  showed no lean or rich correction. Cause not established; octane is a guess, labelled as one.
+- **Coolant at -3 degrees.** The first version of the drive analysis decoded coolant temperature with the wrong formula and
+  reported -1 to -3 degrees C on a warm engine. The real values, through the database's own converters, were 71 to 85 degrees. The
+  same trap: an empty freeze-frame group also carries a temperature and an rpm, and showed -40 degrees and 0 rpm until it was
+  skipped.
+- **The car that went quiet.** At ignition off the engine computer stops answering; the recorder counted four failed reads. The
+  SRS unit, still powered, answered a presence check and made the recorder forget which reads to excuse. Now it is tracked per
+  address.
+- **The ABS and power steering never answered.** From the diagnostic connector, with 29-bit and 11-bit addressing, and with a
+  passive listen on all frames for four seconds each: silence. Honda's own tool has a second CAN controller on connector pins 3 and
+  11 that the GD101 cannot use, but the vendor's connection code asks this adapter for the same pins as this tool does, so the
+  difference is somewhere else. Still unsolved.
+- **A wall found by building the tool to climb it.** `ramwatch` was built to read the engine computer's RAM. It found the
+  gate instead: memory reads are refused by a permanent calibration bit. The tool stays, as the instrument that found the wall,
+  and the plan to find the ignition map moved to modelling it from live data (best single-candidate correlation 0.79) before the
+  project turned to diagnosis and reliability instead of tuning.
+- **The engine computer's unlock is not the one Honda's tool uses.** It has its own check, which was read out of its ROM image and
+  accepted by the car on the first live try.
+- **Speed.** A full scan of the simulated car takes 0.17 seconds on the wall and 0.02 seconds of CPU. The scanner waits for the
+  bus, not for the program.
+
 ## Download and requirements
 
 Two archives are attached to each release. They hold the same program; they differ only in the system they were built on.
@@ -122,6 +155,19 @@ Nothing needs installing for the app itself: no Python, no Rust, no Wine. What t
 - **SocketCAN adapters:** the interface must be up (`sudo ip link set can0 up type can bitrate 500000`).
 
 Step by step: [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started).
+
+## Build from source
+
+You need Rust 1.92 or newer (`rustup`) and, for the GODIAG GD101's J2534 mode, a C compiler. The vehicle database is in the
+repository, so there is nothing to generate first.
+
+```
+cd hondascan && cargo run --release --bin hondascan -- -a sim scan   # scanner, against the simulated car
+cd hondascan && cargo build --release                                 # also builds hondascan-rpc, the app's backend
+cd hondascan-gui && cargo run --release                               # the desktop app
+```
+
+The 3D car on the welcome screen is not in this repository, so that screen is empty here. Everything else works.
 
 ## Quick look
 
