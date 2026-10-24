@@ -18,8 +18,8 @@ dealer software.
 
 > ### I need people with other Honda vehicles
 > Right now the tool has been proven on one car. Every new model, engine and year it runs on makes it better for everyone.
-> **[Open a vehicle report](../../issues/new?template=vehicle_report.md)** or let me know, and I will be more than happy to add
-> you to the private repository with the source code.
+> **[Open a vehicle report](../../issues/new?template=vehicle_report.md)**. The source is in this repository
+> (see [SOURCE.md](SOURCE.md)), and pull requests are welcome.
 
 ## What it does
 
@@ -108,6 +108,13 @@ The [wiki](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki) holds the d
   trouble-code read is already valuable.
 - **Other platforms.** Windows and macOS builds have not been tried.
 - **Bug reports and ideas** go in the [issue tracker](../../issues).
+
+## License
+
+The source code in this repository is free software under the [GNU General Public License v3.0 or later](LICENSE): you may use,
+study, modify and share it. The vehicle database that the program reads is generated from data that is not part of this
+repository and is not covered by this license. The v0.1.1 binary release was published under the earlier freeware terms; they
+remain what governs that download.
 
 ## Disclaimer
 

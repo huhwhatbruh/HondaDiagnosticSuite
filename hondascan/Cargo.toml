@@ -3,6 +3,7 @@ name = "hondascan"
 version = "0.1.1"
 description = "Honda diagnostics on Linux, using data decoded from HDS 3.105.12"
 edition = "2021"
+license = "GPL-3.0-or-later"
 rust-version = "1.92"
 
 [dependencies]

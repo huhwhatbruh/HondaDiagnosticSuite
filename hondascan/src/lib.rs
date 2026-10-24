@@ -8,7 +8,6 @@ pub mod big;
 pub mod cli;
 pub mod db;
 pub mod dbcrypt;
-pub mod decoy;
 pub mod diagh;
 pub mod handback;
 pub mod history;

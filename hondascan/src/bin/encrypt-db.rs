@@ -1,8 +1,7 @@
 //! `encrypt-db [IN] [OUT]`: encrypts a file into the `.enc` form `db.rs` reads back (`dbcrypt::encrypt`, ChaCha20-Poly1305
 //! with the key built into this binary). Defaults to `data/hondascan.db` -> `data/hondascan.db.enc` in this crate.
 //! `package.rs` runs it and ships the `.enc` instead of the plain file. The key is the one this build was compiled
-//! with (`HONDASCAN_DB_KEY`, see `build.rs`), so run it from the same build as the binaries it ships with. The decoy
-//! video (`assets/fulldatabase.mp4.enc`) is not made by this tool any more; it keeps the older XOR form.
+//! with (`HONDASCAN_DB_KEY`, see `build.rs`), so run it from the same build as the binaries it ships with.
 use std::{io::Read, path::PathBuf};
 
 fn nonce() -> [u8; 12] {

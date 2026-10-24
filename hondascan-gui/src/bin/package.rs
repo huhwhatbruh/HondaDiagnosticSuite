@@ -29,7 +29,7 @@ fn run(cmd: &mut Command) -> Res<()> {
 }
 
 /// `RUSTFLAGS` for a shipped binary: remaps this machine's source paths (this checkout, `~/.cargo`, `~/.rustup`) out of
-/// panic messages and debug strings, drops the build-id (same as `hondascan-gui/build-obfuscated.sh`), and sets
+/// panic messages and debug strings, drops the build-id, and sets
 /// `hondascan_packaged` so `hondascan::resource`'s dev-source-tree fallback (a `CARGO_MANIFEST_DIR` string literal,
 /// which the remap flags above cannot touch) compiles out instead of baking this machine's path into the binary.
 /// Applied to every release build whose output is copied into the dist folder, not to `build-db`/`encrypt-db`
