@@ -90,7 +90,7 @@ cd hondascan-gui && cargo run --release                               # the desk
 
 The 3D car on the welcome screen is not in this repository, so that screen is empty here. Everything else works.
 
-## Why trust it
+## Why should you trust it?
 
 - **Checked by execution** against Honda's own code, not against expectations written by hand.
 - **Read-only by default, allowlisted always.** The scanner sends only a short list of diagnostic services, never to "every ECU
