@@ -1,7 +1,0 @@
-# The one place the Rust version is set (there is no CI). To move forward, change the
-# version here, run `rustup toolchain install`, then `cargo clippy --all-targets -- -D warnings` and `cargo test` in
-# hondascan/ and hondascan-gui/, and commit. Never `rustup update` and hope.
-[toolchain]
-channel = "1.99.1"
-profile = "minimal"
-components = ["clippy", "rustfmt"]
