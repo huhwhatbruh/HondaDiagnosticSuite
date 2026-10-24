@@ -13,7 +13,7 @@ this costs thousands of dollars. This does the reading side on a cheap USB adapt
 
 A generic OBD-II reader talks to the emissions computer and knows a few standard codes. A modern Honda carries a dozen or more
 control units (engine, CVT, airbags, instrument cluster, ABS, steering, tyre pressure and more), and each answers in Honda's own
-diagnostic language. This tool speaks it, to each unit by name.
+diagnostic language. Each unit by name.
 
 ## What you get
 
