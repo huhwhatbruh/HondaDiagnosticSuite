@@ -1,13 +1,15 @@
 //! `cargo run --release --bin package`: build a folder (and an archive) you can copy to another computer: the release
 //! binary, the `hondascan-rpc` backend and the `hondascan` CLI next to it (backend.rs looks there), the generated database
-//! (encrypted — see below), the recorded-car profiles and the GD101 driver's source (hondascan::resource finds them next
-//! to the executables, in the same data/, profiles/, drivers/ layout as the source tree), and on Linux the udev rule for
+//! (encrypted — see below), the recorded-car profiles when the source tree has any (the public source has none) and the GD101
+//! driver's source (hondascan::resource finds them next to the executables, in the same data/, profiles/, drivers/ layout as
+//! the source tree), and on Linux the udev rule for
 //! the GODIAG GD101. The GD101's J2534 mode needs a C compiler (cc, gcc or clang) on the target once, to build its driver
 //! from drivers/gd101_j2534.c (hondascan/src/transport/j2534.rs, gd101_library).
 //!
 //! `data/hondascan.db.enc` ships instead of the plain `hondascan.db` the source tree builds: `encrypt-db` seals it
-//! with ChaCha20-Poly1305 (hondascan::dbcrypt; release builds set `HONDASCAN_DB_KEY`) so the decoded HDS tables are not a one-command `sqlite3 hondascan.db` read out of the
-//! package; `db.rs` decrypts it in memory when the packaged binary opens it. A checkout's own `cargo test` still
+//! with ChaCha20-Poly1305 (hondascan::dbcrypt; release builds set `HONDASCAN_DB_KEY`, the public `hondascan/release-key.txt`),
+//! which also makes a damaged copy fail to open instead of answering wrongly; `db.rs` decrypts it in memory when the packaged
+//! binary opens it. The key is public: this is integrity, not secrecy. A checkout's own `cargo test` still
 //! runs against the plain file `build-db` writes; only this packaging step touches the encrypted form.
 //!
 //! The folder also carries `VERSION` (`hondascan <version>`), `manifest.json` (name, version, target OS/arch, build time

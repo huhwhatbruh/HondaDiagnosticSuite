@@ -1,12 +1,10 @@
-//! Keeps the packaged database from being a one-command `sqlite3 hondascan.db` read. The shipped file is
-//! `hondascan.db.enc`: `MAGIC | nonce(12) | ChaCha20-Poly1305(plaintext)`, the magic bound as associated data, so a
-//! flipped bit or a swapped file fails the tag instead of yielding garbage. The key is built in at compile time
-//! (`build.rs`: `HONDASCAN_DB_KEY`, else a public development key) and held as four XOR shares, so the file is safe
-//! from anyone without the binary, but a binary that can decrypt can be made to decrypt: whoever runs it, as root or
-//! with a kernel-level memory reader, can still dump the memory it decrypts into — no software control on a general
-//! purpose OS stops that. `db.rs` loads the plaintext straight into SQLite memory (no file, no temp path),
-//! `harden_process` shuts the same-user `ptrace`/`/proc/pid/mem`/core-dump doors first, and `lock_plain` keeps the
-//! short-lived plaintext buffer out of swap while it exists. This raises the cost, it is not a boundary.
+//! The packaged database is sealed, which makes a flipped bit or a swapped file fail instead of answering wrongly. The shipped
+//! file is `hondascan.db.enc`: `MAGIC | nonce(12) | ChaCha20-Poly1305(plaintext)`, the magic bound as associated data, so a
+//! damaged file fails the tag instead of yielding garbage. The key is built in at compile time (`build.rs`:
+//! `HONDASCAN_DB_KEY`, else `release-key.txt`, which is public) and held as four XOR shares. This is integrity, not secrecy: the
+//! key is published, and a source build reads the plain `hondascan.db`. `db.rs` loads the plaintext straight into SQLite memory (no
+//! file, no temp path); `harden_process` and `lock_plain` (no core dump or ptrace of this process, plaintext kept out of swap) are
+//! left from when the key was private.
 use chacha20poly1305::{aead::{Aead, KeyInit, Payload}, ChaCha20Poly1305, Key, Nonce};
 
 include!(concat!(env!("OUT_DIR"), "/dbkey.rs"));
