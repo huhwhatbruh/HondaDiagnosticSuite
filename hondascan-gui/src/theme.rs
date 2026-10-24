@@ -1,23 +1,23 @@
-//! The look: dark, square, one blue accent, HDS's bevels redrawn for dark (see hondascan-app/src/index.css, the web
-//! app this was ported from). Colours are the sRGB values of the oklch tokens there.
+//! The look: solid black, square, one blue accent, HDS's bevels redrawn for dark (see hondascan-app/src/index.css, the web
+//! app this was ported from). Greys are neutral (no tint); blue is the only colour besides the status colours.
 use eframe::egui::{self, Color32, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle};
 use std::collections::BTreeMap;
 
-pub const BACKGROUND: Color32 = Color32::from_rgb(10, 11, 13);
+pub const BACKGROUND: Color32 = Color32::from_rgb(0, 0, 0);
 pub const FOREGROUND: Color32 = Color32::from_rgb(235, 235, 235);
-pub const PANEL: Color32 = Color32::from_rgb(18, 20, 23);
-pub const CARD: Color32 = Color32::from_rgb(15, 17, 19);
-pub const POPOVER: Color32 = Color32::from_rgb(22, 24, 28);
-pub const SECONDARY: Color32 = Color32::from_rgb(34, 36, 40);
-pub const MUTED: Color32 = Color32::from_rgb(25, 27, 30);
-pub const MUTED_FG: Color32 = Color32::from_rgb(148, 153, 159);
+pub const PANEL: Color32 = Color32::from_rgb(12, 12, 12);
+pub const CARD: Color32 = Color32::from_rgb(8, 8, 8);
+pub const POPOVER: Color32 = Color32::from_rgb(20, 20, 20);
+pub const SECONDARY: Color32 = Color32::from_rgb(32, 32, 32);
+pub const MUTED: Color32 = Color32::from_rgb(22, 22, 22);
+pub const MUTED_FG: Color32 = Color32::from_rgb(150, 150, 150);
 pub const ACCENT: Color32 = Color32::from_rgb(18, 54, 106);
-pub const BORDER: Color32 = Color32::from_rgb(53, 56, 61);
+pub const BORDER: Color32 = Color32::from_rgb(52, 52, 52);
 pub const OK: Color32 = Color32::from_rgb(75, 198, 128);
 pub const WARN: Color32 = Color32::from_rgb(237, 179, 69);
 pub const FAULT: Color32 = Color32::from_rgb(245, 71, 72);
 pub const BLUE: Color32 = Color32::from_rgb(46, 98, 170);
-pub const DATA: Color32 = Color32::from_rgb(211, 216, 222);
+pub const DATA: Color32 = Color32::from_rgb(215, 215, 215);
 pub const TITLE_A: Color32 = Color32::from_rgb(0, 71, 162);
 pub const TITLE_B: Color32 = Color32::from_rgb(18, 34, 57);
 pub const HI: Color32 = Color32::from_rgba_premultiplied(56, 56, 56, 56); // bevel light edge, 22 % white
@@ -70,7 +70,7 @@ pub fn install(ctx: &egui::Context) {
         }
         v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, BORDER);
         v.widgets.inactive.bg_fill = SECONDARY;
-        v.widgets.hovered.bg_fill = Color32::from_rgb(46, 49, 54);
+        v.widgets.hovered.bg_fill = Color32::from_rgb(46, 46, 46);
         v.widgets.active.bg_fill = BLUE;
         v.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::BLACK);
         v.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::BLACK);

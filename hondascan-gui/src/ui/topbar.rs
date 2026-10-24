@@ -31,7 +31,7 @@ fn control(ui: &mut Ui, kind: u8) -> bool {
     let (r, resp) = ui.allocate_exact_size(vec2(32.0, 26.0), Sense::click());
     let hot = resp.hovered();
     let close = kind == 2;
-    crate::widgets::key(ui, r, if hot && close { FAULT } else if hot { Color32::from_rgb(46, 49, 54) } else { SECONDARY }, resp.is_pointer_button_down_on());
+    crate::widgets::key(ui, r, if hot && close { FAULT } else if hot { Color32::from_rgb(46, 46, 46) } else { SECONDARY }, resp.is_pointer_button_down_on());
     let (c, s) = (r.center(), Stroke::new(1.4, if hot && close { Color32::WHITE } else { FOREGROUND }));
     match kind {
         0 => { ui.painter().line_segment([c + vec2(-5.0, 4.0), c + vec2(5.0, 4.0)], s); }
@@ -71,9 +71,9 @@ pub fn show(ui: &mut Ui, app: &mut App) {
             ui.spacing_mut().interact_size.y = 28.0;
             ui.spacing_mut().button_padding = vec2(10.0, 6.0);
             ui.visuals_mut().widgets.inactive.bg_fill = BACKGROUND;
-            ui.visuals_mut().widgets.hovered.bg_fill = Color32::from_rgb(20, 22, 26);
+            ui.visuals_mut().widgets.hovered.bg_fill = Color32::from_rgb(20, 20, 20);
             ui.visuals_mut().widgets.inactive.weak_bg_fill = BACKGROUND;
-            ui.visuals_mut().widgets.hovered.weak_bg_fill = Color32::from_rgb(20, 22, 26);
+            ui.visuals_mut().widgets.hovered.weak_bg_fill = Color32::from_rgb(20, 20, 20);
             let idx = app.choice.min(app.adapters.len() - 1);
             let shown = if app.link == Link::Idle { app.adapters[idx].1.clone() } else { app.adapters.iter().find(|(s, _)| *s == app.adapter).map_or(app.adapter.clone(), |p| p.1.clone()) };
             egui::ComboBox::from_id_salt("adapter").width(260.0).selected_text(shown).show_ui(ui, |ui| {

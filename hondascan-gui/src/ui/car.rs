@@ -45,7 +45,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     let sc = rect.width() / 1000.0;
     // blueprint -> frame (CarBody's matrix) -> screen (viewBox 0 -14 1000 468)
     let outline: Vec<Pos2> = parse(BODY).iter().map(|p| pos2(rect.left() + (50.0 + 0.6484 * p.x) * sc, rect.top() + (28.4 + 0.6484 * p.y + 14.0) * sc)).collect();
-    ui.painter().add(Shape::convex_polygon(outline, Color32::from_rgb(13, 16, 21), Stroke::new(1.4, Color32::from_white_alpha(90))));
+    ui.painter().add(Shape::convex_polygon(outline, Color32::from_rgb(13, 13, 13), Stroke::new(1.4, Color32::from_white_alpha(90))));
     wire_top_down(ui, rect);
     systems(ui, app, rect, sc);
 }

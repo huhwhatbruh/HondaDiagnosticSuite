@@ -102,7 +102,7 @@ pub fn button_x(ui: &mut Ui, icon: Option<&str>, text: &str, kind: Kind, enabled
     let hot = crate::motion::fade(ui.ctx(), resp.id.with("hot"), enabled && resp.hovered());
     let fill = match kind {
         Kind::Primary => crate::motion::mix(BLUE, Color32::from_rgb(45, 128, 235), hot),
-        Kind::Normal => crate::motion::mix(SECONDARY, Color32::from_rgb(46, 49, 54), hot),
+        Kind::Normal => crate::motion::mix(SECONDARY, Color32::from_rgb(46, 46, 46), hot),
     };
     if ui.is_rect_visible(r) {
         let a = if enabled { 1.0 } else { 0.45 };
@@ -187,7 +187,7 @@ pub fn amount(p: &Painter, left_center: Pos2, text: &str, font: FontId, color: C
 /// left edges onto the floor of the well. Dark surfaces hide a plain dark edge, so the lit lip does the work.
 pub fn sunken(ui: &Ui, r: Rect) {
     let p = ui.painter();
-    let lip = Stroke::new(1.0, Color32::from_rgb(74, 79, 87));
+    let lip = Stroke::new(1.0, Color32::from_rgb(74, 74, 74));
     p.line_segment([r.left_bottom() + vec2(0.0, 1.5), r.right_bottom() + vec2(1.5, 1.5)], lip);
     p.line_segment([r.right_top() + vec2(1.5, 0.0), r.right_bottom() + vec2(1.5, 1.5)], lip);
     p.rect_stroke(r, 0.0, Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Inside);
@@ -197,9 +197,9 @@ pub fn sunken(ui: &Ui, r: Rect) {
     vgradient(ui, top, Color32::from_black_alpha(150), Color32::from_black_alpha(0));
     gradient(ui, Rect::from_min_size(inner.min, vec2(8.0, inner.height())), Color32::from_black_alpha(110), Color32::from_black_alpha(0));
     let rings = [
-        (1.0, Color32::from_rgb(0, 0, 0), Color32::from_rgb(66, 71, 79)),
-        (2.0, Color32::from_rgb(6, 6, 8), Color32::from_rgb(46, 50, 56)),
-        (3.0, Color32::from_rgb(14, 15, 18), Color32::from_rgb(30, 33, 38)),
+        (1.0, Color32::from_rgb(0, 0, 0), Color32::from_rgb(66, 66, 66)),
+        (2.0, Color32::from_rgb(6, 6, 6), Color32::from_rgb(46, 46, 46)),
+        (3.0, Color32::from_rgb(14, 14, 14), Color32::from_rgb(30, 30, 30)),
     ];
     for (ring, shadow, light) in rings {
         edges(p, r.shrink(ring), shadow, light);
