@@ -58,14 +58,10 @@ pub fn default_paths() -> Vec<PathBuf> {
 }
 
 /// Opens the encrypted `enc_path` as a read-only in-memory sqlite database: no plaintext ever touches a path, a temp
-/// file or a directory entry. Before decrypting it refuses to run under a debugger (`decoy::check_tamper`; the
-/// decoy video plays and the process exits) and closes the same-user memory-read doors (`dbcrypt::harden_process`).
+/// file or a directory entry. Before decrypting it closes the same-user memory-read doors (`dbcrypt::harden_process`).
 /// The plaintext buffer is `mlock`'d for the short window it exists (`dbcrypt::lock_plain`, so it cannot be paged to
 /// swap and read back later) and wiped as soon as sqlite has copied it. A wrong build's file fails the AEAD tag.
 fn open_encrypted(enc_path: &Path) -> Result<Connection, String> {
-    if crate::decoy::check_tamper() == crate::decoy::TamperSignal::DebuggerAttached {
-        crate::decoy::trigger_decoy();
-    }
     crate::dbcrypt::harden_process();
     let bytes = std::fs::read(enc_path).map_err(|e| format!("{}: {e}", enc_path.display()))?;
     let mut plain = crate::dbcrypt::decrypt(&bytes).map_err(|e| format!("{}: {e}", enc_path.display()))?;

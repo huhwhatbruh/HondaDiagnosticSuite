@@ -7,7 +7,7 @@
 //! purpose OS stops that. `db.rs` loads the plaintext straight into SQLite memory (no file, no temp path),
 //! `harden_process` shuts the same-user `ptrace`/`/proc/pid/mem`/core-dump doors first, and `lock_plain` keeps the
 //! short-lived plaintext buffer out of swap while it exists. This raises the cost, it is not a boundary.
-//! `xor_inplace` below is the older keystream; only the decoy video (`decoy.rs`) still uses it.
+//! `xor_inplace` below is the older keystream, kept for the older XOR form.
 use chacha20poly1305::{aead::{Aead, KeyInit, Payload}, ChaCha20Poly1305, Key, Nonce};
 
 include!(concat!(env!("OUT_DIR"), "/dbkey.rs"));
@@ -99,11 +99,10 @@ pub fn unlock_plain(buf: &mut [u8]) {
     }
 }
 
-/// Fixed keystream seed for the decoy video only (not a literal repeating key). Changing it invalidates
-/// `assets/fulldatabase.mp4.enc`.
+/// Fixed keystream seed for the older XOR form (not a literal repeating key). Changing it invalidates files in that form.
 const SEED: u64 = 0x4f_68_31_30_31_5f_47_44;
 
-/// splitmix64: fast, deterministic bit mixing for the decoy keystream; nothing here resists an attack.
+/// splitmix64: fast, deterministic bit mixing for the older keystream; nothing here resists an attack.
 fn splitmix64(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E3779B97F4A7C15);
     let mut z = *state;

@@ -9,7 +9,7 @@ This is the source of Honda Diagnostic Suite as of release [v0.1.1](https://gith
 ## What is not here, and what that means for building
 
 - The vehicle database (`hondascan.db`) is generated from Honda's own data files, which cannot be redistributed. Without it the scanner cannot be built or run in full from this tree.
-- A few modules are left out: the seed/key routine, the simulator's capture replay, the anti-debugging decoy module, the release key and the packaging files. Code that refers to them will not compile as it stands.
+- A few modules are left out: the seed/key routine, the simulator's capture replay, the release key and the packaging files. Code that refers to them will not compile as it stands.
 - The test suite and the recorded car profiles are left out; they depend on the database or on captures from the owner's car.
 - The 3D car model used by the desktop app is left out.
 
