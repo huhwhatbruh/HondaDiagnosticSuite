@@ -262,6 +262,17 @@ impl Recorder {
         self.stats.iter().find(|(_, s)| s.symbol == symbol).map_or(Val::Null, |(_, s)| s.last.clone())
     }
 
+    /// The latest value and range of every signal read so far, for read-only viewers (the phone gateway, phone.rs).
+    pub fn latest(&self) -> Vec<Value> {
+        self.stats
+            .iter()
+            .map(|((system, did, _), st)| {
+                json!({"system": system, "did": did, "symbol": st.symbol, "unit": st.unit, "value": val_json(&st.last),
+                       "lo": (st.stat.n > 0).then_some(st.stat.lo), "hi": (st.stat.n > 0).then_some(st.stat.hi)})
+            })
+            .collect()
+    }
+
     pub fn signals_seen(&self) -> usize {
         self.stats.len()
     }
