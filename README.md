@@ -17,9 +17,9 @@ diagnostic language. Each unit by name.
 
 ## What you get
 
-- **Every system, not just the engine.** It finds the car's control units by asking for them, the way Honda's own tool does, in
+- **Every system** It finds the car's control units by asking for them, the way Honda's own tool does, in
   under a second: engine (PGM-FI), CVT, SRS airbags, instrument cluster and the rest of the 182 systems Honda knows about.
-- **Honda's own trouble codes, 36,000 of them,** with Honda's descriptions and repair-help text, not just the standard P-codes.
+- **36,000 of Honda's own trouble codes** with Honda's descriptions and repair-help text, not just the standard P-codes.
   Stored, pending and history codes, freeze frame, emissions readiness.
 - **Live data a generic reader never shows.** Misfires counted per cylinder, knock retard in degrees, the valve-timing angle,
   fuel-learning trims, the CVT's shift state: 25,882 signals, each converted with Honda's own formula. Gauges, plus an
@@ -31,7 +31,7 @@ diagnostic language. Each unit by name.
   definitions and 3,607 unit converters. It is in the repo, so a clone builds and runs.
 - **Control units found without a lookup table.** HDS decides which ECU is which by running a small rule program against what the
   car answers. That program is run here too, and the Rust version agrees with it.
-- **Yours.** Plain JSON export, `.tar.gz` backup, nothing phones home. GPL-3.0-or-later.
+- **Yours.** Plain JSON export, `.tar.gz` backup, nothing phones home. with love.
 
 ## How it got here
 
@@ -46,22 +46,6 @@ I took HDS apart bit by bit completely without ever having to install Microslop 
   device's 10-frame transmit queue.
 - **The simulators are stricter than the hardware**, so bugs show up on the bench and not on your car.
 
-## Field notes from the car
-
-Every number was measured on the Accord and logged. Longer write-ups: [How it was built](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/How-It-Was-Built).
-
-- **A long drive, 44,149 reads.** 135 failed, all of them the same 27 data groups the car refuses. A refusal is the car saying
-  "not here", not a fault, and the tool shows it that way. The CVT answers in 3 to 11 ms, the engine computer in 1 to 49 ms, the
-  cluster in about 100 ms, the SRS unit as slowly as 220 ms, which is why the timeout cannot be lowered.
-- **Three misfires and no trouble code.** All three fell inside bursts of knock retard (12.0, 6.5 and 11.5 degrees within 15
-  seconds). Cause not established; octane is a guess, labelled as one.
-- **Coolant at -3 degrees.** The first drive analysis used the wrong formula for coolant temperature. Through the database's own
-  converters the real values were 71 to 85 degrees.
-- **A wall found by building the tool to climb it.** `ramwatch` was built to read the engine computer's RAM and found the gate
-  instead: memory reads are refused by a permanent calibration bit.
-- **The engine computer's unlock is not the one Honda's tool uses.** It has its own check, read out of its ROM image and accepted
-  by the car on the first live try.
-- **Speed.** A full scan of the simulated car takes 0.17 s on the wall and 0.02 s of CPU. The scanner waits for the bus.
 
 ## Quick start
 
