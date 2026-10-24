@@ -32,13 +32,74 @@ dealer software.
 
 | | |
 |---|---|
-| **Confirmed on a real car** | 2015 Honda Accord 2.4 (K24W1, CVT), GODIAG GD101 in J2534 mode: a full scan, codes, live data and a 48-minute recorded drive |
+| **Confirmed on a real car** | 2015 Honda Accord 2.4 (K24W1, CVT), GODIAG GD101 in J2534 mode: a full scan, trouble codes, live data and recorded drives |
 | **Platform** | Linux (only the Linux build has been run) |
 | **Binary release** | [v0.1.1](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.1.1), Linux x86_64, read-only: scan, codes, live data, history and reports. Two builds, see below |
-| **Source** | In this repository as of v0.1.1: `hondascan/` (scanner, adapters, GODIAG GD101 J2534 driver) and `hondascan-gui/` (desktop app). **The vehicle database is generated from vendor data that is not published**, so a full build is not possible from this tree alone.|
+| **Source** | In this repository as of v0.1.1: `hondascan/` (scanner, adapters, GODIAG GD101 J2534 driver) and `hondascan-gui/` (desktop app). The vehicle database (`hondascan/data/hondascan.db`, 21 MB) is included, so a clone builds and runs.|
 | **Not in the first release** | Clearing codes, bi-directional (actuator) tests and writing functions exist in development but have **never been run on a car**, so they are not offered |
 
 The honest summary: it reads the systems that have been checked, and says "untested" everywhere else. See [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles).
+
+## What is done, and what is not
+
+Everything below was measured on one car, a 2015 Accord 2.4 (K24W1, CVT), through a GODIAG GD101 in J2534 mode. Where something
+has not run on a car, this says so.
+
+**Works on a real car**
+- A full scan: the PCM (engine and CVT answer from the same address), the SRS unit and the instrument cluster.
+- Trouble codes with descriptions, live data with units, freeze frame and emissions readiness.
+- Recording drives, stored per car, with trends, fuel economy, misfire and knock views.
+- Health report, JSON export, `.tar.gz` backup, and a baseline you can freeze and compare against later.
+- The GD101 through a native Linux driver, with no Wine.
+
+**Built and tested only against simulated hardware**
+- SocketCAN, slcan, ELM327 and clones, and the older K-line protocol (ISO 14230). The simulators enforce the real hardware's limits,
+  but none of these adapters has been on a car yet.
+- Clearing trouble codes, and a handful of actuator tests (output tests that move a part, such as a fan or a solenoid). Both are
+  allowlisted, need an explicit confirmation, hand control back to the ECU on any error, and have **never been sent to a car**.
+- Eight writing functions that Honda's own tool offers: the engine's variable-valve-timing learn, the CVT inclination-sensor learn
+  (the first of its two stages) and the instrument cluster's maintenance-reminder resets. Same rules, same status: **never run on a
+  car**, so they are not in the release.
+- A phone gateway (`hondascan/src/phone.rs`): a read-only view of the live data for an iPhone over Wi-Fi or Bluetooth. It cannot
+  reach a write, a clear or an actuator test. The pairing code is a short code on your own network and is not encrypted. The iPhone
+  app itself is not published yet.
+
+**Known limits**
+- The ABS and the power-steering unit did not answer from the diagnostic connector on this car, so they are not covered.
+- This PCM refuses direct memory reads by a calibration setting, so live RAM watching cannot work on it. Engine maps are built from
+  what the car reports while you drive, not read from its stored tables.
+- 113 of the 182 systems Honda's tool knows are on the older K-line or Honda's own older protocol: body modules,
+  older models. The K-line client exists; Honda's older protocol has no driver at all, because an ELM327 cannot speak it.
+- Only the Linux build has been run. Windows and macOS have not been tried.
+
+**Not built**
+- ECU reflash, key and immobilizer functions, and the second stage of the CVT learn.
+
+
+## How it was built
+
+Nobody handed over documentation. Everything below was worked out from Honda's own tool and hardware, then checked by running
+it, not by trusting it.
+
+- **Honda's tool, read from the inside.** HDS runs its diagnostic logic as bytecode. A decompiler written for this project turns
+  it back into readable logic: 139 modules, 10,021 functions, no opcode left undecoded. Every in-scope function was then run
+  next to Honda's own interpreter under emulation, on 127,313 inputs, and **all 9,660 agree, with 0 mismatches**. Where the
+  decompiler disagreed with Honda's own code, it was the decompiler that was wrong, and it was fixed (one such bug was 3,586
+  call sites with arguments in the wrong place).
+- **The wire, from the adapter's firmware.** Honda's interface builds the CAN frames itself, so the addressing, the ISO-TP
+  framing, the bit rate and the CAN address table were read out of its firmware with a disassembler, not guessed from captures.
+- **A native driver for a cheap adapter.** The GODIAG GD101 ships a Windows driver. Its J2534 protocol was traced and rewritten as
+  a small C library for Linux (`hondascan/drivers/gd101_j2534.c`), with a fake that behaves like the real device, down to its
+  10-frame transmit queue.
+- **The database.** 182 systems, 36,000 trouble codes, 35,397 help texts, 16,031 ECU identifiers, 25,882 CAN signal definitions and
+  3,607 unit converters, rebuilt from Honda's tables. All 3,607 converters were run against Honda's own conversion code on 12 to
+  20 inputs each: 67,553 runs, 0 mismatches.
+- **Finding the car's control units without a lookup table.** HDS decides which ECU is which by running a small rule program
+  against what the car answers. That program is run here too, and the Rust version agrees with it.
+- **Strict fakes.** The simulated bus filters like SocketCAN, the ELM327 emulator waits for its timeout like the real chip, and
+  the simulated ECUs refuse what the hardware refuses. Scanning the simulated car takes 0.17 s wall, 0.02 s of CPU.
+- **One real car, measured.** Live on a 2015 Accord, the PCM's memory-read gate turned out to be a permanent calibration bit, which
+  ended a whole line of work and is written down as a negative result.
 
 ## Download and requirements
 
@@ -107,8 +168,10 @@ The [wiki](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki) holds the d
 ## License
 
 The source code in this repository is free software under the [GNU General Public License v3.0 or later](LICENSE): you may use,
-study, modify and share it. The vehicle database that the program reads is generated from data that is not part of this
-repository and is not covered by this license. The v0.1.1 binary release was published under the earlier freeware terms; they
+study, modify and share it. The vehicle database (`hondascan/data/hondascan.db`) is derived from Honda's own diagnostic data
+(trouble-code texts, signal definitions, conversion formulas) and is included for interoperability. The GPL covers this project's
+code, not Honda's data: Honda's rights in the original remain. `hondascan/release-key.txt` is the key of the release's encrypted
+copy of the same database, published so that copy can be opened too. The v0.1.1 binary release was published under the earlier freeware terms; they
 remain what governs that download.
 
 ## Disclaimer

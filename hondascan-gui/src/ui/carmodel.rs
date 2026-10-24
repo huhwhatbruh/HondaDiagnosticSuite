@@ -1,11 +1,12 @@
 //! The hologram car's wires: `assets/car/car_wire.pack`, baked from the owner's model by `src/bin/bakecar.rs` (which also
 //! documents the format). Line segments in metres (Y up, nose along +Z, the driver's left at +X), in four groups drawn in
-//! this order: interior, tyres and wheels, body, lamps, each with its colour and brightness.
+//! this order: interior, tyres and wheels, body, lamps, each with its brightness. The pack also stores a colour per group; the
+//! turntable uses its own palette, so it is not read.
 
 pub const PACK: &[u8] = include_bytes!("../../assets/car/car_wire.pack");
 
 /// A run of `count` vertices from `start` (consecutive pairs are segments).
-pub struct Group { pub start: i32, pub count: i32, pub strength: f32, pub colour: [f32; 3] }
+pub struct Group { pub start: i32, pub count: i32, pub strength: f32 }
 
 /// The vertices as 4 x i16 each (0.1 mm units, last always 0) and the groups.
 pub struct Wire<'a> { pub verts: &'a [u8], pub groups: Vec<Group> }
@@ -23,7 +24,7 @@ pub fn parse(pack: &[u8]) -> Option<Wire<'_>> {
         let at = 8 + g * 20;
         let f = |o: usize| word(at + o).map(f32::from_bits);
         let count = word(at)? as i32;
-        groups.push(Group { start, count, strength: f(4)?, colour: [f(8)?, f(12)?, f(16)?] });
+        groups.push(Group { start, count, strength: f(4)? });
         start += count;
     }
     let verts = pack.get(8 + n * 20..)?;

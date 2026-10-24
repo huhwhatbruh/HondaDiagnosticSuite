@@ -2,7 +2,7 @@
 //! baked by `bakecar`), so every angle is a true view and the motion is as smooth as the screen. (An earlier version flipped
 //! through 72 pre-rendered frames 5 degrees apart: the edges jump tens of pixels between neighbours, so every cross-fade
 //! between them showed as ghost copies fading in and out.) It turns by itself and can be dragged: left/right spins it,
-//! up/down tilts it, a throw dies away. Lines add up (additive, no depth test), teal for the body, orange for the interior,
+//! up/down tilts it, a throw dies away. Lines add up (additive, no depth test), white for the body, blue for the interior,
 //! dimmer with distance, with a band of light sweeping up the car. One buffer of about 0.95 MB, four draw calls, in an
 //! `egui_glow` paint callback; the buffer exists only while the welcome screen is up (`App::turntable` is dropped once connected).
 use super::carmodel::{self, Group};
@@ -19,8 +19,8 @@ const FRICTION: f32 = 2.2;       // a throw dies away with this rate a second
 const PITCH: f32 = 17.0;         // resting view from above, degrees; drifts back to it after a drag
 const DIST: f32 = 9.5;           // camera distance, metres
 const HALF_WIDTH: f32 = 3.25;    // metres seen left and right of the car's centre at that distance
-/// Muted slate blue for the body, burnt orange for the interior, greys for tyres and lamps; the baked pack's colours are brighter.
-const PALETTE: [[f32; 3]; 4] = [[0.80, 0.42, 0.14], [0.45, 0.50, 0.58], [0.22, 0.45, 0.80], [0.55, 0.65, 0.80]];
+/// Blue and white: blue interior, grey tyres, white body, bright white lamps (interior, tyres and wheels, body, lamps).
+const PALETTE: [[f32; 3]; 4] = [[0.25, 0.45, 0.85], [0.50, 0.54, 0.60], [0.88, 0.92, 1.00], [1.00, 1.00, 1.00]];
 const CALM: f32 = 0.5;           // lines add up where they cross, so the baked strengths blow out to white; halve them
 const CENTRE_Y: f32 = 0.62;      // the car's middle height
 
