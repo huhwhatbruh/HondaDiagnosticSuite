@@ -3,8 +3,7 @@
 **Honda's dealer diagnostic tool, rebuilt for Linux. Free and open source.**
 
 HDS is the software Honda dealers use. It only runs on Windows and needs Honda's own interface, and the dealer tooling that does
-this costs thousands of dollars. This does the reading side on a cheap USB adapter, on Linux, with the source open. No Windows,
-no Wine, no dealer software.
+this costs thousands of dollars. This does the reading side on a cheap USB adapter, on Linux and more operating systems to come.
 
 > **Proven on a 2015 Accord (K24W1, CVT) so far.** I need people with other Hondas:
 > **[open a vehicle report](../../issues/new?template=vehicle_report.md)**
