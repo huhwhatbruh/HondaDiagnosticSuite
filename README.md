@@ -97,7 +97,7 @@ The 3D car on the welcome screen is not in this repository, so that screen is em
   at once". Details in [Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety).
 - **Nothing phones home.** It talks to your adapter and writes to your own disk.
 
-## Honest status
+## Status
 
 | | |
 |---|---|
