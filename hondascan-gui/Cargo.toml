@@ -1,6 +1,6 @@
 [package]
 name = "hondascan-gui"
-version = "0.1.1"
+version = "0.1.2"
 description = "Native desktop front end for hondascan (Honda diagnostics)"
 default-run = "hondascan-gui"
 license = "GPL-3.0-or-later"
