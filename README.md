@@ -13,7 +13,7 @@ more operating systems to come.
 
 A generic OBD-II reader talks to the emissions computer and knows a few standard codes. A modern Honda carries a dozen or more
 control units (engine, CVT, airbags, instrument cluster, ABS, steering, tyre pressure and more), and each answers in Honda's own
-diagnostic language. Each unit by name.
+diagnostic language. This software understands them completely.
 
 ## What is this?
 
