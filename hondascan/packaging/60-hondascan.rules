@@ -1,0 +1,6 @@
+# Let the logged-in user open diagnostic adapters without root or extra groups.
+# Install: sudo cp 60-hondascan.rules /etc/udev/rules.d/ && sudo udevadm control --reload && replug the adapter
+# GODIAG GD101 (ELM mode serial port)
+# ID_MM_DEVICE_IGNORE: ModemManager must not probe it; its AT commands put the ELM327 out of step
+SUBSYSTEM=="tty", ATTRS{idVendor}=="e327", ATTRS{idProduct}=="2534", TAG+="uaccess", SYMLINK+="gd101", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="e327", ATTRS{idProduct}=="2534", ENV{ID_MM_DEVICE_IGNORE}="1"

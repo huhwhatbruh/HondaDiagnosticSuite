@@ -12,7 +12,7 @@ Project page, wiki and issue tracker: https://github.com/huhwhatbruh/HondaDiagno
 | `hondascan-gui` | The desktop app |
 | `hondascan-rpc` | Its backend. Keep it next to the app |
 | `hondascan` | The command-line tool |
-| `data/`, `profiles/`, `drivers/` | What the program needs. Keep them next to the executables |
+| `data/`, `drivers/` | What the program needs. Keep them next to the executables |
 | `60-hondascan.rules` | udev rule for USB adapters (below) |
 | `SHA256SUMS`, `manifest.json`, `VERSION` | Checksums and version of every file here |
 | `OFL-Geist.txt` | Licence of the app's font |

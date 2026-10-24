@@ -7,7 +7,6 @@
 //! purpose OS stops that. `db.rs` loads the plaintext straight into SQLite memory (no file, no temp path),
 //! `harden_process` shuts the same-user `ptrace`/`/proc/pid/mem`/core-dump doors first, and `lock_plain` keeps the
 //! short-lived plaintext buffer out of swap while it exists. This raises the cost, it is not a boundary.
-//! `xor_inplace` below is the older keystream, kept for the older XOR form.
 use chacha20poly1305::{aead::{Aead, KeyInit, Payload}, ChaCha20Poly1305, Key, Nonce};
 
 include!(concat!(env!("OUT_DIR"), "/dbkey.rs"));
@@ -99,31 +98,6 @@ pub fn unlock_plain(buf: &mut [u8]) {
     }
 }
 
-/// Fixed keystream seed for the older XOR form (not a literal repeating key). Changing it invalidates files in that form.
-const SEED: u64 = 0x4f_68_31_30_31_5f_47_44;
-
-/// splitmix64: fast, deterministic bit mixing for the older keystream; nothing here resists an attack.
-fn splitmix64(state: &mut u64) -> u64 {
-    *state = state.wrapping_add(0x9E3779B97F4A7C15);
-    let mut z = *state;
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
-    z ^ (z >> 31)
-}
-
-/// XOR `data` with the keystream in place. Symmetric: the same call encrypts and decrypts.
-pub fn xor_inplace(data: &mut [u8]) {
-    let mut state = SEED;
-    let mut chunk = [0u8; 8];
-    for block in data.chunks_mut(8) {
-        let word = splitmix64(&mut state).to_le_bytes();
-        chunk[..block.len()].copy_from_slice(&word[..block.len()]);
-        for (b, k) in block.iter_mut().zip(chunk.iter()) {
-            *b ^= k;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,26 +116,5 @@ mod tests {
         }
         assert!(decrypt(&enc[..10]).is_err());
         assert!(decrypt(b"").is_err());
-    }
-
-    #[test]
-    fn xor_round_trips() {
-        let original = b"SELECT * FROM dtc WHERE system='ABS'".to_vec();
-        let mut data = original.clone();
-        xor_inplace(&mut data);
-        assert_ne!(data, original, "encrypted form should not equal the plaintext");
-        xor_inplace(&mut data);
-        assert_eq!(data, original, "xor is its own inverse");
-    }
-
-    #[test]
-    fn xor_handles_short_and_odd_lengths() {
-        for len in [0, 1, 7, 8, 9, 21, 4096] {
-            let original: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
-            let mut data = original.clone();
-            xor_inplace(&mut data);
-            xor_inplace(&mut data);
-            assert_eq!(data, original, "len={len}");
-        }
     }
 }

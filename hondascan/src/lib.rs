@@ -8,6 +8,7 @@ pub mod ble;
 pub mod bonjour;
 pub mod big;
 pub mod cli;
+pub mod cvtsim;
 pub mod db;
 pub mod dbcrypt;
 pub mod diagh;

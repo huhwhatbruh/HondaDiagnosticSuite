@@ -6,6 +6,7 @@
 //! exercised. The bus behaves like SocketCAN (receive filters, a 10-frame transmit queue). The data are invented; codes
 //! are real database codes.
 use crate::actuator::TESTS;
+use crate::cvtsim::CvtIsl;
 use crate::db::Database;
 use crate::honda::{rx_id, tx_id, FUNCTIONAL_ID};
 use crate::simcapture::{self, CaptureEcu};
@@ -130,6 +131,8 @@ pub struct SimEcu {
     pub routine: Option<Routine>,
     routine_started: Option<(u16, Instant)>,
     routine_done: bool,
+    /// The stateful CVT_ISL learn (cvtsim.rs), instead of `routine`: its SLPLMOD/SLPLERR show at DID 0x2340 bytes 29/30.
+    pub cvt_isl: Option<CvtIsl>,
     /// Test hook: the first memory read is answered this many seconds late (a reply after P2).
     pub slow_memory_once: Option<f64>,
     /// Fault injection: (request prefix, replies to lose). The ECU acts on a matching request, then its reply never arrives.
@@ -172,6 +175,7 @@ impl SimEcu {
             routine: None,
             routine_started: None,
             routine_done: false,
+            cvt_isl: None,
             slow_memory_once: None,
             drop_replies: None,
             last: Instant::now(),
@@ -211,7 +215,33 @@ impl SimEcu {
         self
     }
 
+    pub fn with_cvt_isl(mut self, learn: CvtIsl) -> SimEcu {
+        assert!(self.routine.is_none(), "cvt_isl replaces `routine`; set only one");
+        self.cvt_isl = Some(learn);
+        self.sync_cvt_isl();
+        self
+    }
+
+    fn sync_cvt_isl(&mut self) {
+        if let Some(c) = &mut self.cvt_isl {
+            let (m, e) = c.state();
+            self.values.insert((0x2340, 29), vec![m]);
+            self.values.insert((0x2340, 30), vec![e]);
+        }
+    }
+
+    /// The ignition off/on HDS asks for between learn stages: the diagnostic session ends and the module commits a finished learn.
+    pub fn ignition_cycle(&mut self) {
+        self.extended = false;
+        self.io_active.clear();
+        if let Some(c) = &mut self.cvt_isl {
+            c.ignition_cycle();
+        }
+        self.sync_cvt_isl();
+    }
+
     fn expire(&mut self) {
+        self.sync_cvt_isl();
         let now = Instant::now();
         if self.extended && (now - self.last).as_secs_f64() > self.s3 {
             self.extended = false;
@@ -236,6 +266,11 @@ impl SimEcu {
     }
 
     fn routine_control(&mut self, req: &[u8]) -> Vec<u8> {
+        if let Some(c) = &mut self.cvt_isl {
+            let reply = c.control(req, self.extended, self.engine_running);
+            self.sync_cvt_isl();
+            return reply.unwrap_or_else(|code| nrc(0x31, code));
+        }
         let Some(r) = self.routine else { return nrc(0x31, 0x11) };
         if req.len() < 4 {
             return nrc(0x31, 0x13);
