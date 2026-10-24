@@ -304,7 +304,9 @@ fn main() -> Res<()> {
         std::fs::copy(krate.join(format!("target/release/{b}{exe}")), out.join(format!("{b}{exe}")))?;
     }
     std::fs::copy(&db_enc, out.join("data/hondascan.db.enc"))?;
-    copy_dir(&krate.join("profiles"), &out.join("profiles"))?;
+    if krate.join("profiles").is_dir() {
+        copy_dir(&krate.join("profiles"), &out.join("profiles"))?; // recorded cars; the public source has none
+    }
     std::fs::copy(krate.join("drivers/gd101_j2534.c"), out.join("drivers/gd101_j2534.c"))?;
     // The archive carries its own short user README, never the repo's README.md (the research notes, which name vendor
     // material and private paths and are not for the public release).

@@ -90,18 +90,13 @@ fn writable(dir: &Path) -> (&'static str, String) {
     }
 }
 
-/// The files the tool needs beside it (packaged) or in the crate (from a checkout): the GD101 J2534 driver's source and
-/// the recorded-car profiles. Missing is a warn: the simulated car and SocketCAN need neither.
+/// The file the tool needs beside it (packaged) or in the crate (from a checkout): the GD101 J2534 driver's source. Missing is
+/// a warn: the simulated car and SocketCAN do not need it. (Recorded-car profiles are optional: you make your own.)
 fn resources() -> (&'static str, String) {
-    let missing: Vec<&str> = [("drivers/gd101_j2534.c", crate::resource("drivers/gd101_j2534.c")), ("profiles/", crate::resource("profiles"))]
-        .into_iter()
-        .filter(|(_, p)| !p.exists())
-        .map(|(name, _)| name)
-        .collect();
-    if missing.is_empty() {
-        ("ok", "drivers/gd101_j2534.c and profiles/ found".into())
+    if crate::resource("drivers/gd101_j2534.c").exists() {
+        ("ok", "drivers/gd101_j2534.c found".into())
     } else {
-        ("warn", format!("{} not found (the simulated car and SocketCAN still work)", missing.join(", ")))
+        ("warn", "drivers/gd101_j2534.c not found (the simulated car and SocketCAN still work)".into())
     }
 }
 

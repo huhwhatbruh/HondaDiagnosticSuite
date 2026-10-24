@@ -1,14 +1,29 @@
 # Honda Diagnostic Suite
 
-**An open, native Linux diagnostic tool for Honda vehicles.**
-Read trouble codes and live data, record every drive, and keep a health history of your car, with no Windows, no Wine and no
-dealer software.
+**The Honda dealer scan tool, rebuilt in the open, for Linux.**
+
+A generic OBD-II reader talks to the emissions computer and knows a few standard codes. A modern Honda carries a dozen or more
+control units (engine, CVT, airbags, instrument cluster, ABS, steering, tyre pressure and more), and each answers in Honda's own
+diagnostic language. This tool speaks it, to each unit by name, with no Windows, no Wine and no dealer software.
+
+- **Every system, not just the engine.** It finds the car's control units by asking for them, the way Honda's own tool does, and
+  reads each one: engine (PGM-FI), CVT, SRS airbags, instrument cluster and the rest of the 182 systems Honda knows about.
+- **Honda's own trouble codes, 36,000 of them,** with Honda's descriptions and its repair-help text, not just the standard
+  P-codes.
+- **Live data a generic reader never shows.** Misfires counted per cylinder, knock retard in degrees, the valve-timing angle,
+  fuel-learning trims, the CVT's shift state: 25,882 signals, each converted with Honda's own formula. Every converter was checked
+  against Honda's own code with 0 mismatches.
+- **Honda's tool, read from the inside.** Its diagnostic logic was decompiled and every function run next to Honda's own
+  interpreter: 127,313 comparisons, 0 mismatches.
+- **A health history of your car.** Every drive is recorded; a healthy scan can be frozen as a baseline and compared against later.
+- **Native Linux, even for a cheap adapter.** The GODIAG GD101 gets a driver written for this project.
+
+It has been proven on one car so far, for the engine, CVT, SRS and instrument cluster; the other systems are built from Honda's
+data and are untested. [What is done and what is not](#what-is-done-and-what-is-not).
 
 *We all as consumers have a right to repair. Nothing on a car should be proprietary.*
 
 [Get started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
-
-</div>
 
 ---
 
@@ -168,6 +183,11 @@ cd hondascan-gui && cargo run --release                               # the desk
 ```
 
 The 3D car on the welcome screen is not in this repository, so that screen is empty here. Everything else works.
+
+**Record your own car.** The recordings of the author's car are not in this repository. Make yours: run any command with
+`--log capture.log` (`hondascan -a <adapter> --log capture.log scan`), then turn the capture into a simulator profile with
+`cargo run --release --bin profile-from-capture -- capture.log profiles/mycar.json.gz --vin 00000000000000000`, which replaces your
+VIN with the one you give it, so the profile can be shared.
 
 ## Quick look
 
