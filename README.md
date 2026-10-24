@@ -8,7 +8,7 @@ more operating systems to come.
 > **Proven on a 2015 Accord (K24W1, CVT) so far.** I need people with other Hondas:
 > **[open a vehicle report](../../issues/new?template=vehicle_report.md)**
 
-[Download v0.1.2](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.1.2) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
+[Download v0.1.3](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.1.3) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
 
 
 A generic OBD-II reader talks to the emissions computer and knows a few standard codes. A modern Honda carries a dozen or more
@@ -60,12 +60,12 @@ The desktop app `hondascan-gui` wraps the same scanner. Download, udev rule, ada
 
 ## Download and requirements
 
-One archive is attached to [each release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.1.2), with a
+One archive is attached to [each release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.1.3), with a
 `.sha256` file.
 
 | Archive | Runs on |
 |---|---|
-| `hondascan-0.1.2-linux-x86_64.tar.gz` | Built on Ubuntu 22.04 (glibc 2.35). Any Linux x86_64 with glibc 2.35 or newer (`ldd --version`). Tested on Ubuntu 22.04 and Arch (CachyOS); Debian 12+ and Fedora should run it but are not tested |
+| `hondascan-0.1.3-linux-x86_64.tar.gz` | Built on Ubuntu 22.04 (glibc 2.35). Any Linux x86_64 with glibc 2.35 or newer (`ldd --version`). Tested on Ubuntu 22.04 and Arch (CachyOS); Debian 12+ and Fedora should run it but are not tested |
 
 Nothing to install for the app itself: no Python, no Rust, no Wine. The machine needs:
 

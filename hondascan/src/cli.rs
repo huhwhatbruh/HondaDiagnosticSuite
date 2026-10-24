@@ -11,7 +11,7 @@
 //!   hondascan -a gd101 adapter                    identify the adapter (ELM version, baud, battery voltage)
 //!   hondascan -a gd101 wakeup                     does one functional 3E 00 reach every system? (vs one per address)
 //!   hondascan -a elm-kline:/dev/ttyUSB0 kwp ecu-id|read|dtc|clear|present|live ADDR [LID] [--system S]   K-line (ISO 14230); never run on a car
-//!   hondascan -a elm-obd9141:/dev/ttyUSB0 obd scan|dtc|vin|live [PID...]   generic OBD-II over ISO 9141-2 (cars before ~2008); never run on a car
+//!   hondascan -a elm-obd:/dev/ttyUSB0 obd scan|dtc|vin|live [PID...]   generic OBD-II on the K-line (cars before ~2008; elm-obd9141: forces ISO 9141-2); never run on a car
 //!   hondascan actuator list                       HDS's actuator tests that are whitelisted (never run on a car yet)
 //!   hondascan -a ... actuator run TEST VALUE      run one for --seconds (asks first, --yes skips; conditions are checked live)
 //!   hondascan write list                          HDS's write functions that are whitelisted (never run on a car yet)
@@ -537,7 +537,7 @@ const HELP: [&str; 25] = [
     "   hondascan -a gd101 adapter                    identify the adapter (ELM version, baud, battery voltage)",
     "   hondascan -a gd101 wakeup                     does one functional 3E 00 reach every system? (vs one per address)",
     "   hondascan -a elm-kline:/dev/ttyUSB0 kwp ecu-id|read|dtc|clear|present|live ADDR [LID] [--system S]   K-line (ISO 14230); never run on a car",
-    "   hondascan -a elm-obd9141:/dev/ttyUSB0 obd scan|dtc|vin|live [PID...]   generic OBD-II over ISO 9141-2 (cars before ~2008); never run on a car",
+    "   hondascan -a elm-obd:/dev/ttyUSB0 obd scan|dtc|vin|live [PID...]   generic OBD-II on the K-line (cars before ~2008; elm-obd9141: forces ISO 9141-2); never run on a car",
     "   hondascan actuator list                       HDS's actuator tests that are whitelisted (never run on a car yet)",
     "   hondascan -a ... actuator run TEST VALUE      run one for --seconds (asks first, --yes skips; conditions are checked live)",
     "   hondascan write list                          HDS's write functions that are whitelisted (never run on a car yet)",
@@ -1076,8 +1076,8 @@ fn kwp(adapter: &Arc<dyn crate::transport::Adapter>, db: &Arc<Database>, cmd: &C
 /// Generic OBD-II requests over ISO 9141-2 (obd9141.rs): read only, every ECU that answers. The adapter starts the bus on the first request.
 fn obd(adapter: &Arc<dyn crate::transport::Adapter>, db: &Arc<Database>, cmd: &Cmd, io: &mut Io) -> R<i32> {
     let Cmd::Obd { action, pids } = cmd else { unreachable!() };
-    let Some(kline) = adapter.as_kline().filter(|k| k.proto() == KProto::Iso9141) else {
-        return Err(Fail::Exit("obd needs an ISO 9141-2 adapter, e.g. -a elm-obd9141:/dev/ttyUSB0 (or gd101-obd9141)".into()));
+    let Some(kline) = adapter.as_kline() else {
+        return Err(Fail::Exit("obd needs a K-line adapter, e.g. -a elm-obd:/dev/ttyUSB0 (tries every K-line protocol), elm-obd9141: or gd101-obd".into()));
     };
     let o = Obd::new(kline);
     let codes = |io: &mut Io, service: u8, label: &str| -> R<()> {

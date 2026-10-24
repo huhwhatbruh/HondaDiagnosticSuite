@@ -32,6 +32,19 @@ impl fmt::Display for ObdError {
 
 impl std::error::Error for ObdError {}
 
+/// An adapter message that says the car did not answer the start-up gets the next things to try; any other text passes through.
+fn link_error(msg: String) -> ObdError {
+    let flat = msg.to_uppercase().replace(' ', "");
+    if flat.contains("UNABLETOCONNECT") || flat.contains("BUSINIT") {
+        return ObdError::Link(format!(
+            "{msg}: the car did not answer the ISO 9141-2 start-up. Check the key is ON and the adapter is on the OBD port. \
+             If the adapter itself works, the car may use ISO 14230 instead: use `-a elm-obd:PORT`, which tries ISO 9141-2 and both ISO 14230 starts. \
+             Run again with --log FILE to record what the adapter printed"
+        ));
+    }
+    ObdError::Link(msg)
+}
+
 pub const LIVE_DATA: u8 = 0x01;
 pub const FREEZE_FRAME: u8 = 0x02;
 pub const STORED_DTC: u8 = 0x03;
@@ -74,7 +87,7 @@ impl<'a> Obd<'a> {
             return Err(ObdError::Refused(format!("request {:02X?} is outside the read-only OBD-II set (01, 02, 03, 07, 09)", request)));
         }
         let echo = if matches!(service, LIVE_DATA | FREEZE_FRAME | VEHICLE_INFO) { 2 } else { 1 };
-        let replies = self.link.obd_request(request).map_err(|e| ObdError::Link(e.to_string()))?;
+        let replies = self.link.obd_request(request).map_err(|e| link_error(e.to_string()))?;
         Ok(replies.into_iter().filter(|(_, d)| d.len() >= echo && d[0] == service | 0x40 && (echo == 1 || d[1] == request[1])).collect())
     }
 

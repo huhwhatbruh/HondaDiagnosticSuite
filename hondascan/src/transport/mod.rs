@@ -232,7 +232,7 @@ pub fn find_port(usb_id: Option<(&str, &str)>) -> Result<String, OpenError> {
 }
 
 /// `socketcan:IFACE`, `slcan:PORT[@BITRATE]`, `sim[:PROFILE]` and (as they are ported) `elm`, `gd101`, `j2534`, `gd101-j2534`,
-/// `elm-kline`, `elm-obd9141`, `replay:FILE`.
+/// `elm-kline`, `elm-obd9141`, `elm-obd` (tries each K-line protocol), `replay:FILE`.
 pub fn open_adapter(spec: &str, log: Option<Arc<can::CaptureLog>>) -> Result<Arc<dyn Adapter>, OpenError> {
     let (kind, arg) = spec.split_once(':').unwrap_or((spec, ""));
     let (path, num) = arg.split_once('@').unwrap_or((arg, ""));
@@ -259,9 +259,12 @@ pub fn open_adapter(spec: &str, log: Option<Arc<can::CaptureLog>>) -> Result<Arc
             let baud = if num.is_empty() { None } else { Some(num.parse().map_err(|_| OpenError { kind: "ValueError", message: format!("bad baud {num:?}") })?) };
             elm327::open_elm(&port, baud, log).map_err(|e| OpenError { kind: "ElmError", message: e.to_string() })
         }
-        "elm-kline" | "elm-kline5" | "elm-obd9141" | "gd101-obd9141" => {
-            let port = if path.is_empty() { find_port(if kind == "gd101-obd9141" { Some(GD101_USB_ID) } else { None })? } else { path.to_string() };
+        "elm-kline" | "elm-kline5" | "elm-obd9141" | "gd101-obd9141" | "elm-obd" | "gd101-obd" => {
+            let port = if path.is_empty() { find_port(if kind.starts_with("gd101") { Some(GD101_USB_ID) } else { None })? } else { path.to_string() };
             let baud = if num.is_empty() { None } else { Some(num.parse().map_err(|_| OpenError { kind: "ValueError", message: format!("bad baud {num:?}") })?) };
+            if kind.ends_with("-obd") {
+                return elm_kline::ElmKLine::open_obd_auto(&port, baud, log).map(|a| Arc::new(a) as Arc<dyn Adapter>).map_err(|e| OpenError { kind: "ElmError", message: e.to_string() });
+            }
             let proto = match kind {
                 "elm-kline" => elm327::KProto::Fast,
                 "elm-kline5" => elm327::KProto::Slow,
@@ -289,7 +292,7 @@ pub fn open_adapter(spec: &str, log: Option<Arc<can::CaptureLog>>) -> Result<Arc
         }
         _ => Err(OpenError {
             kind: "ValueError",
-            message: format!("unknown adapter {spec:?} (socketcan:, slcan:, j2534:, elm:, elm-kline:, elm-kline5:, elm-obd9141:, gd101-obd9141, gd101, gd101-j2534, sim, replay:)"),
+            message: format!("unknown adapter {spec:?} (socketcan:, slcan:, j2534:, elm:, elm-kline:, elm-kline5:, elm-obd9141:, gd101-obd9141, elm-obd:, gd101-obd, gd101, gd101-j2534, sim, replay:)"),
         }),
     }
 }

@@ -199,17 +199,35 @@ fn frames(elm: &Elm327, text: &str, parse: &dyn Fn(&[u8]) -> Option<Frame>) -> R
     Ok(out)
 }
 
-/// (source, data) of an ISO 9141-2 reply frame `48 6B <ecu> data... checksum`; a missing checksum byte is accepted as in `payload_of`.
+/// (source, data) of a generic OBD-II reply frame: ISO 9141-2 `48 6B <ecu> data... checksum`, or an ISO 14230-4 frame (`payload_of`);
+/// a missing checksum byte is accepted in both.
 fn obd_payload(raw: &[u8]) -> Option<Frame> {
-    if raw.len() < 5 || raw[0] != 0x48 || raw[1] != 0x6B {
-        return None;
+    if raw.len() >= 5 && raw[0] == 0x48 && raw[1] == 0x6B {
+        let n = raw.len() - 1;
+        let body = if checksum(&raw[..n]) == raw[n] { &raw[3..n] } else { &raw[3..] };
+        return Some((raw[2], body.to_vec()));
     }
-    let n = raw.len() - 1;
-    let body = if checksum(&raw[..n]) == raw[n] { &raw[3..n] } else { &raw[3..] };
-    Some((raw[2], body.to_vec()))
+    let (data, source) = payload_of(raw).ok()?;
+    Some((source?, data))
 }
 
 impl ElmKLine {
+    /// Open `port` for generic OBD-II on whichever K-line protocol the car answers to `01 00`: ISO 9141-2, then ISO 14230-4 with
+    /// 5-baud init, then with fast init. The first that gets a reply stays open; if none does, the error says what each one printed.
+    pub fn open_obd_auto(port: &str, baud: Option<u32>, log: Option<Arc<CaptureLog>>) -> Result<ElmKLine, ElmErr> {
+        let mut tried = vec![];
+        for (name, proto) in [("ISO 9141-2", KProto::Iso9141), ("ISO 14230-4 5-baud init", KProto::Slow), ("ISO 14230-4 fast init", KProto::Fast)] {
+            let link = ElmKLine::open(port, baud, log.clone(), proto)?;
+            match link.obd_request(&[0x01, 0x00]) {
+                Ok(r) if !r.is_empty() => return Ok(link),
+                Ok(_) => tried.push(format!("{name}: no answer")),
+                Err(e) => tried.push(format!("{name}: {e}")),
+            }
+            Adapter::close(&link);
+        }
+        Err(ElmErr::error(format!("no K-line protocol got an answer from the car ({}); is the key ON and the adapter on the OBD port?", tried.join("; "))))
+    }
+
     /// One generic OBD-II request on an ISO 9141-2 adapter (`elm-obd9141`): the adapter adds the 68 6A F1 header and the checksum, and
     /// the first request starts the 5-baud initialisation at address 33. Returns each answering ECU's (address, data), which may be
     /// several; an empty list is "no data".
