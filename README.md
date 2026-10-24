@@ -1,6 +1,6 @@
 # Honda Diagnostic Suite
 
-**Honda's dealer diagnostic tool, rebuilt for Linux. Free and open source.**
+**A dealer level diagnostic tool, built from real data. Free and open source.**
 
 HDS is the software Honda dealers use. It only runs on Windows. This does the reading side on a cheap USB adapter, on Linux and
 more operating systems to come.
