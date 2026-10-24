@@ -65,7 +65,7 @@ One archive is attached to [each release](https://github.com/huhwhatbruh/HondaDi
 
 | Archive | Runs on |
 |---|---|
-| `hondascan-0.1.2-linux-x86_64.tar.gz` | Built on Ubuntu 22.04 (glibc 2.35). Any Linux x86_64 with glibc 2.35 or newer (`ldd --version`). Tested on Ubuntu 22.04; Debian 12+, Fedora and Arch should run it but are not tested |
+| `hondascan-0.1.2-linux-x86_64.tar.gz` | Built on Ubuntu 22.04 (glibc 2.35). Any Linux x86_64 with glibc 2.35 or newer (`ldd --version`). Tested on Ubuntu 22.04 and Arch (CachyOS); Debian 12+ and Fedora should run it but are not tested |
 
 Nothing to install for the app itself: no Python, no Rust, no Wine. The machine needs:
 
