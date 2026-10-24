@@ -15,4 +15,6 @@ This is the source of Honda Diagnostic Suite as of release [v0.1.1](https://gith
 
 The iPhone app is not part of this release.
 
-Read it as a reference for how the protocols and the adapters work.
+Read it as a reference for how the protocols and the adapters work. The code is licensed under GPL-3.0-or-later (see `LICENSE`); the generated database is not part of it.
+
+Honda and HDS are trademarks of their owners. This project is independent and not affiliated with or endorsed by them.
