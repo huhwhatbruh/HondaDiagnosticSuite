@@ -1,38 +1,35 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Something crashed, printed nonsense, or behaved differently from the wiki
 title: ''
-labels: ''
+labels: bug
 assignees: ''
 
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**What happened**
+What you ran, what you expected, and what happened instead. Paste the exact command and the full output
+(remove the VIN first: it is 17 characters starting with 1, 2, 3, J, S or W).
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+**Does it happen on the simulated car?**
+Run `hondascan -a sim scan`. If the bug shows there too, you need no car or adapter to reproduce it.
+- [ ] Yes, on the simulator
+- [ ] No, only with my car or adapter
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+**Version and how you got it**
+- Version (`hondascan --version`, or the release you downloaded):
+- [ ] Release archive
+- [ ] Built from source (commit):
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+**Your computer**
+- Linux distribution and version:
+- Desktop app or command line:
+- Wayland or X11 (desktop app only):
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+**Your car and adapter** (if the car is involved)
+- Year / model / engine and transmission:
+- Adapter and the `-a` spec you used (e.g. GODIAG GD101 J2534, `socketcan:can0`, ELM327 clone):
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
-
-**Additional context**
-Add any other context about the problem here.
+**Attachments**
+A capture helps most: re-run with `--log capture.log`. It can contain the VIN, so remove it or ask before attaching.
+Screenshots help for the desktop app.

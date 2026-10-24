@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Getting started and troubleshooting
+    url: https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started
+    about: Install, the udev rule, adapters and common errors. Most first problems are answered there.
+  - name: FAQ
+    url: https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ
+    about: Does it need Windows, what can it write, which cars, which adapters.
