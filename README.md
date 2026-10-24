@@ -95,7 +95,7 @@ The 3D car on the welcome screen is not in this repository, so that screen is em
 - **Checked by execution** against Honda's own code, not against expectations written by hand.
 - **Read-only by default, allowlisted always.** The scanner sends only a short list of diagnostic services, never to "every ECU
   at once". Details in [Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety).
-- **Nothing phones home.** It talks to your adapter and writes to your own disk.
+- **Completely OpenSource** open for all
 
 ## Status
 
