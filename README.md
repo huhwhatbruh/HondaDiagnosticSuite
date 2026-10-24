@@ -35,7 +35,7 @@ dealer software.
 | **Confirmed on a real car** | 2015 Honda Accord 2.4 (K24W1, CVT), GODIAG GD101 in J2534 mode: a full scan, codes, live data and a 48-minute recorded drive |
 | **Platform** | Linux (only the Linux build has been run) |
 | **Binary release** | [v0.1.1](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.1.1), Linux x86_64, read-only: scan, codes, live data, history and reports. Two builds, see below |
-| **Source** | In this repository as of v0.1.1: `hondascan/` (scanner, adapters, GODIAG GD101 J2534 driver) and `hondascan-gui/` (desktop app). **The vehicle database is generated from vendor data that is not published**, so a full build is not possible from this tree alone.|
+| **Source** | In this repository as of v0.1.1: `hondascan/` (scanner, adapters, GODIAG GD101 J2534 driver) and `hondascan-gui/` (desktop app). The vehicle database (`hondascan/data/hondascan.db`, 21 MB) is included, so a clone builds and runs.|
 | **Not in the first release** | Clearing codes, bi-directional (actuator) tests and writing functions exist in development but have **never been run on a car**, so they are not offered |
 
 The honest summary: it reads the systems that have been checked, and says "untested" everywhere else. See [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles).
@@ -75,7 +75,31 @@ has not run on a car, this says so.
 **Not built**
 - ECU reflash, key and immobilizer functions, and the second stage of the CVT learn.
 
-The vehicle database is generated from Honda's own data and is not in this repository. The binary release includes one.
+
+## How it was built
+
+Nobody handed over documentation. Everything below was worked out from Honda's own tool and hardware, then checked by running
+it, not by trusting it.
+
+- **Honda's tool, read from the inside.** HDS runs its diagnostic logic as bytecode. A decompiler written for this project turns
+  it back into readable logic: 139 modules, 10,021 functions, no opcode left undecoded. Every in-scope function was then run
+  next to Honda's own interpreter under emulation, on 127,313 inputs, and **all 9,660 agree, with 0 mismatches**. Where the
+  decompiler disagreed with Honda's own code, it was the decompiler that was wrong, and it was fixed (one such bug was 3,586
+  call sites with arguments in the wrong place).
+- **The wire, from the adapter's firmware.** Honda's interface builds the CAN frames itself, so the addressing, the ISO-TP
+  framing, the bit rate and the CAN address table were read out of its firmware with a disassembler, not guessed from captures.
+- **A native driver for a cheap adapter.** The GODIAG GD101 ships a Windows driver. Its J2534 protocol was traced and rewritten as
+  a small C library for Linux (`hondascan/drivers/gd101_j2534.c`), with a fake that behaves like the real device, down to its
+  10-frame transmit queue.
+- **The database.** 182 systems, 36,000 trouble codes, 35,397 help texts, 16,031 ECU identifiers, 25,882 CAN signal definitions and
+  3,607 unit converters, rebuilt from Honda's tables. All 3,607 converters were run against Honda's own conversion code on 12 to
+  20 inputs each: 67,553 runs, 0 mismatches.
+- **Finding the car's control units without a lookup table.** HDS decides which ECU is which by running a small rule program
+  against what the car answers. That program is run here too, and the Rust version agrees with it.
+- **Strict fakes.** The simulated bus filters like SocketCAN, the ELM327 emulator waits for its timeout like the real chip, and
+  the simulated ECUs refuse what the hardware refuses. Scanning the simulated car takes 0.17 s wall, 0.02 s of CPU.
+- **One real car, measured.** Live on a 2015 Accord, the PCM's memory-read gate turned out to be a permanent calibration bit, which
+  ended a whole line of work and is written down as a negative result.
 
 ## Download and requirements
 
@@ -144,8 +168,10 @@ The [wiki](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki) holds the d
 ## License
 
 The source code in this repository is free software under the [GNU General Public License v3.0 or later](LICENSE): you may use,
-study, modify and share it. The vehicle database that the program reads is generated from data that is not part of this
-repository and is not covered by this license. The v0.1.1 binary release was published under the earlier freeware terms; they
+study, modify and share it. The vehicle database (`hondascan/data/hondascan.db`) is derived from Honda's own diagnostic data
+(trouble-code texts, signal definitions, conversion formulas) and is included for interoperability. The GPL covers this project's
+code, not Honda's data: Honda's rights in the original remain. `hondascan/release-key.txt` is the key of the release's encrypted
+copy of the same database, published so that copy can be opened too. The v0.1.1 binary release was published under the earlier freeware terms; they
 remain what governs that download.
 
 ## Disclaimer

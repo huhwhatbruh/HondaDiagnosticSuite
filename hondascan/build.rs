@@ -1,9 +1,9 @@
 //! Writes `$OUT_DIR/dbkey.rs`: the 32-byte database key as four XOR shares, so no contiguous key sits in the binary
 //! (or in the source). The key comes from `HONDASCAN_DB_KEY` (64 hex digits), else from `release-key.txt` next to
-//! this file (tracked in the private repo only; the public repo must not carry it), else a fixed development key, so a
+//! this file (tracked), else a fixed development key, so a
 //! checkout without either builds, encrypts and decrypts with itself and `cargo test` needs no secret.
 //! A `.enc` made by one key does not open under another (the AEAD tag fails), so release packaging must run
-//! `encrypt-db` from the same build that ships. The release key stays out of every repo.
+//! `encrypt-db` from the same build that ships.
 use std::{env, fs, path::PathBuf};
 
 const DEV_KEY: [u8; 32] = *b"hondascan-dev-key--not-a-secret!";
