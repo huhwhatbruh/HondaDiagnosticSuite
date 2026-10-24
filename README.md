@@ -15,7 +15,7 @@ A generic OBD-II reader talks to the emissions computer and knows a few standard
 control units (engine, CVT, airbags, instrument cluster, ABS, steering, tyre pressure and more), and each answers in Honda's own
 diagnostic language. Each unit by name.
 
-## What you get
+## What is this?
 
 - **Every system** It finds the car's control units by asking for them, the way Honda's own tool does, in
   under a second: engine (PGM-FI), CVT, SRS airbags, instrument cluster and the rest of the 182 systems Honda knows about.
@@ -25,13 +25,13 @@ diagnostic language. Each unit by name.
   fuel-learning trims, the CVT's shift state: 25,882 signals, each converted with Honda's own formula. Gauges, plus an
   engine-map view built from what the car reports as you drive.
 - **Every drive recorded.** Codes that came and went, fuel economy, misfires, knock, and a health report against a saved baseline.
-- **Native Linux, even for a cheap adapter.** The GODIAG GD101 in J2534 mode runs through a small C driver written for this
+- **Native Linux** The GODIAG GD101 in J2534 mode runs through a small C driver written for this
   project. SocketCAN, slcan, J2534, ELM327 and clones are supported too.
 - **Honda's own database.** 182 systems, 36,000 trouble codes, 35,397 help texts, 16,031 ECU identifiers, 25,882 CAN signal
   definitions and 3,607 unit converters. It is in the repo, so a clone builds and runs.
 - **Control units found without a lookup table.** HDS decides which ECU is which by running a small rule program against what the
   car answers. That program is run here too, and the Rust version agrees with it.
-- **Yours.** Plain JSON export, `.tar.gz` backup, nothing phones home. with love.
+
 
 ## How it got here
 
