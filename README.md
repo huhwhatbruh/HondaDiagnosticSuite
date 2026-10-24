@@ -106,14 +106,14 @@ VIN with the one you give it, so the profile can be shared.
 |---|---|
 | **Works on a real car** | Scan of the PCM (engine and CVT answer from one address), SRS and instrument cluster; trouble codes, live data, freeze frame, emissions readiness, recorded drives, health report, JSON export, `.tar.gz` backup. 2015 Accord, GD101 in J2534 mode. |
 | **Simulator only** | SocketCAN, slcan, ELM327 and clones, K-line (ISO 14230). Clearing codes, three actuator tests (radiator fan, A/C compressor clutch, 12 V battery fan) and 8 writing functions (VTC learn, first stage of the CVT inclination-sensor learn, cluster maintenance resets), all allowlisted, confirmed and handing control back on error. **Never sent to a car, so not in the release.** A read-only phone gateway for an iPhone exists in the source; the app is not published. |
-| **Not covered** | ABS and power steering did not answer from the connector on this car. This PCM refuses direct memory reads (a permanent calibration bit), so engine maps come from live data, not stored tables. 113 of the 182 systems use the older K-line or Honda's own older protocol (the K-line client exists; the older protocol has no driver, an ELM327 cannot speak it). Reflash, key and immobilizer functions and the second CVT learn stage are not built. Only Linux has been run. |
+| **Not covered** | ABS and power steering did not answer from the connector on this car. This PCM refuses direct memory reads (a permanent calibration bit), so engine maps come from live data, not stored tables. 113 of the 182 systems use the older K-line or Honda's own older protocol (the K-line client exists; the older protocol has no driver, an ELM327 cannot speak it). Reflash, key and immobilizer functions and the second CVT learn stage are not built. Only Linux has been run, and Windows does not compile yet. |
 
 Field notes from the car (the misfires with no code, the ABS that never answered, the memory-read wall) are in [How it was built](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/How-It-Was-Built). Details per vehicle: [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles).
 
 ## Help wanted
 
 - **Other Hondas, any adapter.** A scan and a code read is already valuable: [Contributing a vehicle](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Contributing-a-Vehicle).
-- **Windows and macOS builds.** Not tried.
+- **Windows and macOS ports.** The scanner uses Linux sockets, serial and poll calls: a Windows build fails with 130 compile errors today, so it needs a real port (SocketCAN and the serial layer first). macOS is untried.
 - **Bugs and ideas:** the [issue tracker](../../issues).
 
 *We all have a right to repair. Nothing on a car should be proprietary.*
