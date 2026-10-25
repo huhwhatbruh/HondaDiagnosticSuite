@@ -4,7 +4,7 @@
 use crate::api::{MapBaseline, MapSignal, Maps};
 use crate::theme::*;
 use crate::widgets::{button, window, Kind};
-use eframe::egui::{self, vec2, Align2, Color32, RichText, Ui};
+use eframe::egui::{self, vec2, Align2, Color32, Margin, RichText, Ui};
 
 const ORDER: [&str; 9] = ["IG", "KLAFAVE", "KLAF", "LAMBDA", "KNRTD", "KNRTD1", "KNRTD2", "KNRTD3", "KNRTD4"];
 const CYLS: [&str; 4] = ["KNRTD1", "KNRTD2", "KNRTD3", "KNRTD4"];
@@ -97,6 +97,15 @@ fn history_line(b: &MapBaseline) -> (Color32, String) {
     }
 }
 
+/// Content inset 20 px from both edges of the card: wrapped lines stay inside the margin (a `horizontal_wrapped` row only
+/// indents its first line).
+fn inset<R>(ui: &mut Ui, body: impl FnOnce(&mut Ui) -> R) -> R {
+    egui::Frame::NONE.inner_margin(Margin::symmetric(20, 0)).show(ui, |ui| { ui.set_width(ui.available_width()); body(ui) }).inner
+}
+
+/// A wrapped paragraph inside the card's margin.
+fn note(ui: &mut Ui, text: impl Into<String>, size: f32, color: Color32) { inset(ui, |ui| ui.label(RichText::new(text.into()).size(size).color(color))); }
+
 /// The headline as a big figure with its sentence beside it.
 fn banner(ui: &mut Ui, (col, big, text, sub): (Color32, String, String, String)) {
     ui.add_space(8.0);
@@ -119,20 +128,20 @@ pub fn show(ui: &mut Ui, maps: Option<&Maps>, sel: &mut String) {
         if let Some(h) = headline(m) { banner(ui, h); }
         let (hc, ht) = history_line(&m.baseline);
         if !ht.is_empty() {
-            ui.horizontal_wrapped(|ui| { ui.add_space(20.0); ui.label(RichText::new(ht).size(13.0).color(hc)).on_hover_text(&m.baseline.rule); });
+            inset(ui, |ui| ui.label(RichText::new(ht).size(13.0).color(hc)).on_hover_text(&m.baseline.rule));
             ui.add_space(8.0);
         }
         ui.separator();
         ui.add_space(8.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.add_space(20.0);
+        inset(ui, |ui| ui.horizontal_wrapped(|ui| {
             for s in ORDER.iter().filter(|s| !s.starts_with("KNRTD") || **s == "KNRTD" || m.signals.get(**s).is_some_and(|x| x.samples > 0)) {
                 let name = m.signals.get(*s).map_or(*s, |x| x.name.as_str()).replace("Knock retard, cylinder ", "Cylinder ");
                 if button(ui, &name, if *sel == *s { Kind::Primary } else { Kind::Normal }).clicked() { *sel = s.to_string(); }
             }
-        });
+        }));
+        ui.add_space(6.0);
         let (target, span, digits, about) = read(sel);
-        ui.horizontal_wrapped(|ui| { ui.add_space(20.0); ui.label(RichText::new(format!("{about} Down the side is engine speed, across the top is how hard the engine is working (air per revolution).")).size(12.0).color(MUTED_FG)); });
+        note(ui, format!("{about} Down the side is engine speed, across the top is how hard the engine is working (air per revolution). Each row and column is the range up to its number."), 12.0, MUTED_FG);
         let Some(sig) = m.signals.get(sel.as_str()).filter(|s| !s.cells.is_empty()) else {
             return empty(ui, if sel.starts_with("KNRTD") || sel == "IG" { "Empty until the engine has run. Every drive fills it in." }
                 else { "Empty until the engine has run. Fuel readings only count once the engine is warm (70 °C, 158 °F) and burning fuel, so it stays blank while it warms up and on the overrun." });
@@ -152,11 +161,11 @@ fn grid(ui: &mut Ui, m: &Maps, sig: &MapSignal, sel: &str, (target, span, digits
     let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), (hi - lo + 2) as f32 * rh + 14.0), egui::Sense::hover());
     let o = area.min + vec2(20.0, 8.0);
     ui.painter().text(o + vec2(rw - 6.0, rh / 2.0), Align2::RIGHT_CENTER, "rpm \\ g/rev", sans(11.0), MUTED_FG);
-    for (j, l) in m.load.iter().enumerate() { ui.painter().text(o + vec2(rw + j as f32 * ch + ch / 2.0, rh / 2.0), Align2::CENTER_CENTER, format!("≤{l}"), sans(11.0), MUTED_FG); }
+    for (j, l) in m.load.iter().enumerate() { ui.painter().text(o + vec2(rw + j as f32 * ch + ch / 2.0, rh / 2.0), Align2::CENTER_CENTER, l.to_string(), sans(11.0), MUTED_FG); }
     for r in lo..=hi {
         let y = o.y + (r - lo + 1) as f32 * rh;
         if !ui.is_rect_visible(egui::Rect::from_min_size(egui::pos2(area.left(), y), vec2(area.width(), rh))) { continue; }   // out of view: not laid out
-        ui.painter().text(egui::pos2(o.x + rw - 6.0, y + rh / 2.0), Align2::RIGHT_CENTER, format!("≤{}", m.rpm[r]), sans(11.0), MUTED_FG);
+        ui.painter().text(egui::pos2(o.x + rw - 6.0, y + rh / 2.0), Align2::RIGHT_CENTER, m.rpm[r].to_string(), sans(11.0), MUTED_FG);
         for j in 0..m.load.len() {
             let cell = egui::Rect::from_min_size(egui::pos2(o.x + rw + j as f32 * ch, y), vec2(ch - 1.0, rh - 1.0));
             match cells.iter().find(|c| c[0] as usize == r && c[1] as usize == j) {
@@ -186,7 +195,7 @@ fn grid(ui: &mut Ui, m: &Maps, sig: &MapSignal, sel: &str, (target, span, digits
 
 fn empty(ui: &mut Ui, text: &str) {
     ui.add_space(12.0);
-    ui.horizontal_wrapped(|ui| { ui.add_space(20.0); ui.label(RichText::new(text).size(13.0).color(MUTED_FG)); });
+    note(ui, text, 13.0, MUTED_FG);
     ui.add_space(12.0);
 }
 

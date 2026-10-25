@@ -117,14 +117,7 @@ pub fn ts(t: &Value) -> String {
     if !truthy(t) {
         return "-".into();
     }
-    unsafe {
-        let tt = secs as libc::time_t;
-        let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&tt, &mut tm);
-        let mut buf = [0u8; 64];
-        let n = libc::strftime(buf.as_mut_ptr() as *mut _, buf.len(), c"%Y-%m-%d %H:%M:%S".as_ptr(), &tm);
-        String::from_utf8_lossy(&buf[..n]).into_owned()
-    }
+    crate::localtime::stamp(secs)
 }
 
 fn mm(d: &Value, unit: &str) -> String {

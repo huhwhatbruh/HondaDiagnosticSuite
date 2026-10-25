@@ -46,7 +46,7 @@ pub fn show(ui: &mut Ui, ecu: &Ecu, tests: &[&ActTest], act: Option<&ActStatus>,
         and gives control back to the car if anything goes wrong or the adapter is unplugged.").size(13.0).color(MUTED_FG));
     ui.add_space(8.0);
     for t in tests {
-        card().show(ui, |ui| {
+        card(ui, egui::Margin::ZERO, |ui| {
             ui.set_width(ui.available_width());
             Frame::NONE.inner_margin(Margin::same(16)).show(ui, |ui| {
                 ui.set_width(ui.available_width());

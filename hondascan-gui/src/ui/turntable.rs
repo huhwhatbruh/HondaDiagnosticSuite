@@ -1,53 +1,65 @@
-//! The welcome screen's car: the owner's hologram model drawn live in 3D as a wiregram (`carmodel.rs`: its feature edges,
-//! baked by `bakecar`), so every angle is a true view and the motion is as smooth as the screen. (An earlier version flipped
-//! through 72 pre-rendered frames 5 degrees apart: the edges jump tens of pixels between neighbours, so every cross-fade
-//! between them showed as ghost copies fading in and out.) It turns by itself and can be dragged: left/right spins it,
-//! up/down tilts it, a throw dies away. Lines add up (additive, no depth test), white for the body, blue for the interior,
-//! dimmer with distance, with a band of light sweeping up the car. One buffer of about 0.95 MB, four draw calls, in an
-//! `egui_glow` paint callback; the buffer exists only while the welcome screen is up (`App::turntable` is dropped once connected).
+//! The car's wires on the GPU (`carmodel.rs`: the owner's model's feature edges, baked by `bakecar`), drawn by the Overview's
+//! Vehicle card (`car.rs`). Lines add up (additive, no depth test), dimmer with distance. Each line is a quad widened on the
+//! screen and anti-aliased by its coverage, in one buffer and four draw calls in an `egui_glow` paint callback. (The welcome
+//! screen's spinning 3D car was removed 2026-10-24, owner: it heated the machine and told the person nothing.)
 use super::carmodel::{self, Group};
-use crate::theme::BLUE;
-use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, Sense, Shape, Stroke, Ui};
+use eframe::egui::{self, Rect};
 use eframe::egui_glow::{self, ShaderVersion};
 use eframe::glow::{self, HasContext};
 use std::sync::{Arc, Mutex};
 
-const SPIN: f32 = 18.0;          // degrees a second on its own
-const PER_PX: f32 = 0.4;         // degrees of yaw per pixel dragged
-const TILT_PER_PX: f32 = 0.25;   // degrees of pitch per pixel dragged
-const FRICTION: f32 = 2.2;       // a throw dies away with this rate a second
-const PITCH: f32 = 17.0;         // resting view from above, degrees; drifts back to it after a drag
-const DIST: f32 = 9.5;           // camera distance, metres
-const HALF_WIDTH: f32 = 3.25;    // metres seen left and right of the car's centre at that distance
 /// Blue and white: blue interior, grey tyres, white body, bright white lamps (interior, tyres and wheels, body, lamps).
 const PALETTE: [[f32; 3]; 4] = [[0.25, 0.45, 0.85], [0.50, 0.54, 0.60], [0.88, 0.92, 1.00], [1.00, 1.00, 1.00]];
 const CALM: f32 = 0.5;           // lines add up where they cross, so the baked strengths blow out to white; halve them
-const CENTRE_Y: f32 = 0.62;      // the car's middle height
+const LINE_PT: f32 = 0.75;       // line width in points: thin, since lines add up where they cross
 
 pub type Mat = [f32; 16];            // column-major, as GL wants it
 
-fn mul(a: &Mat, b: &Mat) -> Mat { std::array::from_fn(|i| (0..4).map(|k| a[k * 4 + i % 4] * b[(i / 4) * 4 + k]).sum()) }
-fn translate(x: f32, y: f32, z: f32) -> Mat { [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., x, y, z, 1.] }
-fn rot_y(a: f32) -> Mat { let (s, c) = a.sin_cos(); [c, 0., -s, 0., 0., 1., 0., 0., s, 0., c, 0., 0., 0., 0., 1.] }
-fn rot_x(a: f32) -> Mat { let (s, c) = a.sin_cos(); [1., 0., 0., 0., 0., c, s, 0., 0., -s, c, 0., 0., 0., 0., 1.] }
-fn perspective(fy: f32, aspect: f32, near: f32, far: f32) -> Mat {
-    let f = 1.0 / (fy / 2.0).tan();
-    [f / aspect, 0., 0., 0., 0., f, 0., 0., 0., 0., (far + near) / (near - far), -1., 0., 0., 2.0 * far * near / (near - far), 0.]
-}
 
-const VS: &str = "uniform mat4 mvp; uniform float unit; in vec4 a_pos; out float v_y; out float v_w;
-void main() { vec3 p = a_pos.xyz * unit; v_y = p.y; gl_Position = mvp * vec4(p, 1.0); v_w = gl_Position.w; }";
-// the group's colour times its strength, dimmer the further from the camera, with a band of light sweeping up the car
-// (`scan` is its height in metres)
-const FS: &str = "uniform vec3 col; uniform float strength; uniform float scan; in float v_y; in float v_w; out vec4 o;
+// Each segment is a quad of four vertices (each carries its own end and the other end, `side` in the fourth short) that the
+// vertex shader widens to `width` physical pixels on the screen, so a line is anti-aliased by its own coverage at any
+// display scale; a GL line is one aliased pixel wide whatever the screen.
+const VS: &str = "uniform mat4 mvp; uniform float unit; uniform vec2 vp; uniform float width;
+in vec4 a_pos; in vec4 a_other; out float v_y; out float v_w; out float v_across;
+void main() {
+  vec3 p = a_pos.xyz * unit; vec3 q = a_other.xyz * unit;
+  vec4 cp = mvp * vec4(p, 1.0); vec4 cq = mvp * vec4(q, 1.0);
+  vec2 sp = cp.xy / cp.w * 0.5 * vp; vec2 sq = cq.xy / cq.w * 0.5 * vp;
+  vec2 d = sq - sp; float l = length(d); d = l > 1e-4 ? d / l : vec2(1.0, 0.0);
+  float h = width * 0.5 + 1.0;
+  vec2 off = vec2(-d.y, d.x) * a_pos.w * h / (0.5 * vp);   // no cap beyond the ends: lines add up, so overlapping joints would be dots
+  gl_Position = vec4(cp.xy + off * cp.w, cp.z, cp.w);
+  v_y = p.y; v_w = cp.w; v_across = a_pos.w * h;
+}";
+// the group's colour times its strength and the line's coverage, dimmer the further from the camera, with a band of light
+// sweeping up the car (`scan` is its height in metres)
+const FS: &str = "uniform vec3 col; uniform float strength; uniform float scan; uniform float width; in float v_y; in float v_w; in float v_across; out vec4 o;
 void main() {
   float depth = clamp(1.45 - (v_w - 6.0) / 6.0, 0.30, 1.0);
   float band = exp(-pow((v_y - scan) / 0.13, 2.0));
-  o = vec4(col * strength * depth * (1.0 + 0.5 * band), 1.0);
+  float cover = clamp(width * 0.5 + 0.5 - abs(v_across), 0.0, 1.0);
+  o = vec4(col * strength * depth * (1.0 + 0.5 * band) * cover, 1.0);
 }";
 
-pub struct Gpu { gl: Arc<glow::Context>, prog: glow::Program, vao: glow::VertexArray, vbo: glow::Buffer, groups: Vec<Group>,
-    mvp: Option<glow::UniformLocation>, col: Option<glow::UniformLocation>, strength: Option<glow::UniformLocation>, scan: Option<glow::UniformLocation> }
+pub struct Gpu { gl: Arc<glow::Context>, prog: glow::Program, vao: glow::VertexArray, vbo: glow::Buffer, ebo: glow::Buffer, groups: Vec<Group>,
+    vp: Option<glow::UniformLocation>, width: Option<glow::UniformLocation>, mvp: Option<glow::UniformLocation>, col: Option<glow::UniformLocation>, strength: Option<glow::UniformLocation>, scan: Option<glow::UniformLocation> }
+
+/// The wire's segments (consecutive vertex pairs, 4 x i16 each) as quads: per segment four vertices of 8 shorts (this end with
+/// its side, -1 or 1, in place of the unused w; then the other end), and six u32 indices, both as bytes.
+fn quads(verts: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let v = |i: usize| -> [i16; 4] { std::array::from_fn(|k| i16::from_le_bytes([verts[i * 8 + k * 2], verts[i * 8 + k * 2 + 1]])) };
+    let n = verts.len() / 16;
+    let (mut out, mut idx) = (Vec::with_capacity(n * 64), Vec::with_capacity(n * 24));
+    for s in 0..n {
+        let (a, b) = (v(2 * s), v(2 * s + 1));
+        for (end, other, side) in [(a, b, 1i16), (a, b, -1), (b, a, 1), (b, a, -1)] {
+            for x in [end[0], end[1], end[2], side, other[0], other[1], other[2], 0] { out.extend_from_slice(&x.to_le_bytes()); }
+        }
+        let q = 4 * s as u32;
+        for i in [q, q + 1, q + 2, q + 2, q + 1, q + 3] { idx.extend_from_slice(&i.to_le_bytes()); }
+    }
+    (out, idx)
+}
 
 impl Gpu {
     fn new(gl: &Arc<glow::Context>) -> Result<Gpu, String> {
@@ -69,30 +81,39 @@ impl Gpu {
                 shaders.push(s);
             }
             gl.bind_attrib_location(prog, 0, "a_pos");
+            gl.bind_attrib_location(prog, 1, "a_other");
             gl.link_program(prog);
             if !gl.get_program_link_status(prog) { return Err(gl.get_program_info_log(prog)); }
             for s in shaders { gl.detach_shader(prog, s); gl.delete_shader(s); }
 
-            let (vao, vbo) = (gl.create_vertex_array()?, gl.create_buffer()?);
+            let (vao, vbo, ebo) = (gl.create_vertex_array()?, gl.create_buffer()?, gl.create_buffer()?);
             gl.bind_vertex_array(Some(vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, wire.verts, glow::STATIC_DRAW);
-            gl.enable_vertex_attrib_array(0);
-            gl.vertex_attrib_pointer_f32(0, 4, glow::SHORT, false, 8, 0);   // x, y, z in 0.1 mm, converted as they are (not normalised)
+            let (quads, indices) = quads(wire.verts);
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, &quads, glow::STATIC_DRAW);
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(ebo));
+            gl.buffer_data_u8_slice(glow::ELEMENT_ARRAY_BUFFER, &indices, glow::STATIC_DRAW);
+            for (loc, at) in [(0, 0), (1, 8)] {
+                gl.enable_vertex_attrib_array(loc);
+                gl.vertex_attrib_pointer_f32(loc, 4, glow::SHORT, false, 16, at);   // x, y, z in 0.1 mm, converted as they are (not normalised)
+            }
             gl.use_program(Some(prog));
             gl.uniform_1_f32(gl.get_uniform_location(prog, "unit").as_ref(), carmodel::UNIT);
-            Ok(Gpu { gl: gl.clone(), vao, vbo, groups: wire.groups,
+            Ok(Gpu { gl: gl.clone(), vao, vbo, ebo, groups: wire.groups,
+                vp: gl.get_uniform_location(prog, "vp"), width: gl.get_uniform_location(prog, "width"),
                 mvp: gl.get_uniform_location(prog, "mvp"), col: gl.get_uniform_location(prog, "col"),
                 strength: gl.get_uniform_location(prog, "strength"), scan: gl.get_uniform_location(prog, "scan"), prog })
         }
     }
 
-    fn draw(&self, mvp: &Mat, scan: f32, gain: f32, mono: bool) {
+    fn draw(&self, mvp: &Mat, vp: [f32; 2], width: f32, scan: f32, gain: f32, mono: bool) {
         let gl = &self.gl;
         unsafe {
             gl.use_program(Some(self.prog));
             gl.uniform_matrix_4_f32_slice(self.mvp.as_ref(), false, mvp);
             gl.uniform_1_f32(self.scan.as_ref(), scan);
+            gl.uniform_2_f32(self.vp.as_ref(), vp[0], vp[1]);
+            gl.uniform_1_f32(self.width.as_ref(), width);
             gl.bind_vertex_array(Some(self.vao));
             gl.enable(glow::BLEND);
             gl.blend_equation(glow::FUNC_ADD);
@@ -101,7 +122,7 @@ impl Gpu {
                 let c = if mono { [0.85; 3] } else { PALETTE[i.min(3)] };   // mono: every group plain light grey
                 gl.uniform_3_f32(self.col.as_ref(), c[0], c[1], c[2]);
                 gl.uniform_1_f32(self.strength.as_ref(), g.strength * gain * if mono { 1.0 } else { CALM });
-                gl.draw_arrays(glow::LINES, g.start, g.count);
+                gl.draw_elements(glow::TRIANGLES, g.count / 2 * 6, glow::UNSIGNED_INT, g.start / 2 * 6 * 4);
             }
         }
     }
@@ -109,7 +130,7 @@ impl Gpu {
 
 impl Drop for Gpu {
     fn drop(&mut self) {
-        unsafe { self.gl.delete_program(self.prog); self.gl.delete_vertex_array(self.vao); self.gl.delete_buffer(self.vbo); }
+        unsafe { self.gl.delete_program(self.prog); self.gl.delete_vertex_array(self.vao); self.gl.delete_buffer(self.vbo); self.gl.delete_buffer(self.ebo); }
     }
 }
 
@@ -130,66 +151,8 @@ pub fn wire_callback(shared: Arc<Mutex<Shared>>, rect: Rect, mvp: Mat, scan: f32
         if s.gpu.is_none() && !s.failed {
             match Gpu::new(painter.gl()) { Ok(g) => s.gpu = Some(g), Err(e) => { eprintln!("car: {e}"); s.failed = true; } }
         }
-        if let Some(g) = &s.gpu { g.draw(&mvp, scan, gain, mono); }
+        // a line 0.75 physical pixels wide at 1x, the same fraction of a point on a denser screen
+        if let Some(g) = &s.gpu { g.draw(&mvp, [r - l, b - t], LINE_PT * ppx, scan, gain, mono); }
     })) }
 }
 
-pub struct Turntable {
-    shared: Arc<Mutex<Shared>>,
-    yaw: f32,                    // degrees, 0 = nose towards the viewer
-    pitch: f32,                  // degrees above the horizon
-    speed: f32,                  // degrees a second from a throw, dying away
-}
-
-impl Turntable {
-    pub fn new() -> Turntable { Turntable { shared: Arc::default(), yaw: 35.0, pitch: PITCH, speed: 0.0 } }
-
-    /// Where the point (x, 0, z) on the floor lands in `rect`.
-    fn floor(mvp: &Mat, rect: Rect, x: f32, z: f32) -> Pos2 {
-        let c = |r: usize| mvp[r] * x + mvp[8 + r] * z + mvp[12 + r];
-        let (cx, cy, cw) = (c(0), c(1), c(3));
-        pos2(rect.left() + (cx / cw * 0.5 + 0.5) * rect.width(), rect.top() + (0.5 - cy / cw * 0.5) * rect.height())
-    }
-
-    /// Draw it `width` points wide, half as high.
-    pub fn show(&mut self, ui: &mut Ui, width: f32) {
-        let (rect, resp) = ui.allocate_exact_size(vec2(width, width * 0.5), Sense::click_and_drag());
-        let dt = ui.input(|i| i.stable_dt).min(0.1);
-        if resp.dragged() {
-            let d = resp.drag_delta();
-            self.speed = 0.6 * self.speed + 0.4 * d.x * PER_PX / dt.max(0.004);
-            self.yaw += d.x * PER_PX;
-            self.pitch = (self.pitch + d.y * TILT_PER_PX).clamp(3.0, 70.0);
-        } else {
-            self.speed *= (-FRICTION * dt).exp();
-            self.yaw += (SPIN + self.speed) * dt;
-            self.pitch += (PITCH - self.pitch) * (1.0 - (-0.5 * dt).exp());
-        }
-        self.yaw = self.yaw.rem_euclid(360.0);
-        if resp.hovered() || resp.dragged() { ui.ctx().set_cursor_icon(if resp.dragged() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::Grab }); }
-
-        let aspect = rect.width() / rect.height();
-        let fy = 2.0 * (HALF_WIDTH / DIST / aspect).atan();
-        let view = mul(&translate(0.0, 0.0, -DIST), &mul(&rot_x(self.pitch.to_radians()), &mul(&rot_y(self.yaw.to_radians()), &translate(0.0, -CENTRE_Y, 0.0))));
-        let mvp = mul(&perspective(fy, aspect, 1.0, 40.0), &view);
-
-        // a floor ring and a ring of ticks under the car, in the same projection
-        let paint = ui.painter_at(rect);
-        let ring = |radius: f32, a: u8| {
-            let pts: Vec<Pos2> = (0..=96).map(|i| { let t = i as f32 / 96.0 * std::f32::consts::TAU; Self::floor(&mvp, rect, radius * t.cos(), radius * t.sin()) }).collect();
-            paint.add(Shape::line(pts, Stroke::new(1.0, BLUE.gamma_multiply(a as f32 / 255.0))));
-        };
-        ring(2.7, 90);
-        ring(2.88, 40);
-        for i in 0..24 {
-            let t = i as f32 / 24.0 * std::f32::consts::TAU;
-            let len = if i % 6 == 0 { 0.35 } else { 0.15 };
-            let (a, b) = (Self::floor(&mvp, rect, 2.7 * t.cos(), 2.7 * t.sin()), Self::floor(&mvp, rect, (2.7 + len) * t.cos(), (2.7 + len) * t.sin()));
-            paint.line_segment([a, b], Stroke::new(1.0, Color32::from_rgba_unmultiplied(BLUE.r(), BLUE.g(), BLUE.b(), 110)));
-        }
-
-        let scan = (ui.input(|i| i.time) as f32 * 0.35).fract() * 2.3 - 0.3;   // metres up the car, a little beyond both ends
-        ui.painter().add(wire_callback(self.shared.clone(), rect, mvp, scan, 1.0, false));
-        if ui.input(|i| i.viewport().focused != Some(false)) { ui.ctx().request_repaint(); }   // always moving, at the screen's rate; it rests while the window is in the background
-    }
-}

@@ -70,8 +70,7 @@ pub fn show(ui: &mut Ui, st: &mut LiveUi, cat: &Catalog, system_type: &str) {
         let cw = w / cols as f32;
         let rows = pins.len().div_ceil(cols);
         let (area, _) = ui.allocate_exact_size(vec2(w, rows as f32 * (cw + 10.0)), Sense::hover());
-        ui.painter().rect_filled(area, 0.0, CARD);
-        ui.painter().rect_stroke(area, 0.0, Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Outside);
+        crate::widgets::pane(ui, area);
         for (n, k) in pins.iter().enumerate() {
             let Some(def) = cat.dids.iter().find(|d| d.did == k.0).and_then(|d| d.signals.get(k.1)) else { continue };
             let r = Rect::from_min_size(area.min + vec2((n % cols) as f32 * cw, (n / cols) as f32 * (cw + 10.0)), vec2(cw, cw + 10.0));
@@ -97,7 +96,7 @@ pub fn show(ui: &mut Ui, st: &mut LiveUi, cat: &Catalog, system_type: &str) {
         let is_open = open.contains(did);
         let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
         ui.painter().rect_filled(r, 0.0, crate::motion::mix(CARD, SECONDARY, crate::motion::fade(ui.ctx(), resp.id.with("hot"), resp.hovered())));
-        ui.painter().rect_stroke(r, 0.0, Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Inside);
+        ui.painter().rect_stroke(r, 0.0, Stroke::new(1.0, BORDER), egui::StrokeKind::Inside);
         let tri = if is_open { egui_phosphor::regular::CARET_DOWN } else { egui_phosphor::regular::CARET_RIGHT };
         ui.painter().text(r.left_center() + vec2(12.0, 0.0), Align2::LEFT_CENTER, tri, sans(13.0), MUTED_FG);
         let t = ui.painter().text(r.left_center() + vec2(30.0, 0.0), Align2::LEFT_CENTER, "Data group", bold(13.0), FOREGROUND);
@@ -141,7 +140,7 @@ pub fn show(ui: &mut Ui, st: &mut LiveUi, cat: &Catalog, system_type: &str) {
             let col = match value.and_then(|v| v.as_str()) { Some(s) if state_on(s) => OK, Some(s) if state_off(s) => MUTED_FG, _ => FOREGROUND };
             let u = ui.painter().text(r.right_center() - vec2(14.0, 0.0), Align2::RIGHT_CENTER, &unit, sans(12.0), MUTED_FG);
             ui.painter().text(pos2(u.left() - if unit.is_empty() { -14.0 } else { 5.0 }, r.center().y), Align2::RIGHT_CENTER, &text, mono_bold(13.0), col);
-            ui.painter().line_segment([r.left_bottom(), r.right_bottom()], Stroke::new(1.0, Color32::from_white_alpha(12)));
+            ui.painter().line_segment([r.left_bottom(), r.right_bottom()], Stroke::new(1.0, BORDER));
             if resp.on_hover_text(&named.raw).clicked() && !st.expanded.remove(&key) { st.expanded.insert(key); }
             }
             let reveal = crate::motion::open(ui.ctx(), ui.id().with(("detail", did, i)), st.expanded.contains(&key));

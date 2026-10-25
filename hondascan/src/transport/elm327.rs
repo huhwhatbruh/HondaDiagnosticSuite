@@ -4,7 +4,8 @@
 //! HDS's `30 00 00`) and the faults seen live on the GD101 (a reply that belongs to an earlier command, a banner in a reply, a
 //! command with no prompt) that are handled here: the stale reply is dropped and the command asked again, a reboot sets the
 //! adapter up again and repeats the addressing and the request. Both leave a `# ELM!` line in the log.
-use super::can::{secs, CaptureLog, SerialPort};
+use super::can::{secs, CaptureLog};
+use super::serial::{is_busy, SerialPort};
 use super::elm_link::{exchange, frames, request, Elm327Link, ElmErr};
 use super::isotp::{reply_to, DiagLink, IsoTpError, LinkError};
 use super::Adapter;
@@ -287,7 +288,7 @@ impl Inner {
             let p = match SerialPort::open(&self.path, b) {
                 Ok(p) => p,
                 Err(e) => {
-                    if e.raw_os_error() == Some(libc::EBUSY) {
+                    if is_busy(&e) {
                         return Err(ElmErr::error(format!("{} is in use by another program", self.path))); // not a matter of speed
                     }
                     last = Some(e.to_string());

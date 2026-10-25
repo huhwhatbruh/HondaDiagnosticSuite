@@ -336,17 +336,4 @@ impl App {
         }
     }
 
-    /// Toast each warning when it first appears, and again when it steps up to a worse level (a misfire or knock alert
-    /// that was a warning and is now a fault), so an escalation raises a fresh Error toast. The bar shows it meanwhile.
-    pub(super) fn announce(&mut self, ctx: &egui::Context) {
-        let now: Vec<Alert> = self.status.as_ref().map(|s| s.alerts.clone()).unwrap_or_default();
-        for a in &now {
-            let key = format!("{}@{}", a.id, a.level); // id+level: a warn->fault step is a new key, so it toasts again
-            if !self.told.contains(&key) {
-                self.told.push(key);
-                self.toasts.push(ctx, &format!("alert-{}", a.id), if a.fault() { Level::Error } else { Level::Warn }, &a.title, &a.text, 15.0);
-            }
-        }
-        self.told.retain(|k| now.iter().any(|a| format!("{}@{}", a.id, a.level) == *k));
-    }
 }

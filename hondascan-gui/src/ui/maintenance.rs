@@ -94,7 +94,7 @@ pub fn show_freeze(ui: &mut Ui, app: &mut App) {
         }
         ui.add_space(14.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if button_x(ui, Some(egui_phosphor::regular::SNOWFLAKE), "Save snapshot", Kind::Primary, gate.is_ok()).clicked() { freeze = true; }
+            if button_x(ui, Some(egui_phosphor::regular::FLOPPY_DISK), "Save snapshot", Kind::Primary, gate.is_ok()).clicked() { freeze = true; }
             if button(ui, "Cancel", Kind::Normal).clicked() { close = true; }
         });
     });

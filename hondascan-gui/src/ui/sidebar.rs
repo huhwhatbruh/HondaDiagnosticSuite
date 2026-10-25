@@ -5,38 +5,37 @@ use crate::theme::*;
 use crate::widgets::label;
 use eframe::egui::{self, vec2, Align2, Color32, Sense, Stroke, Ui};
 
+/// A row sits 3 px inside the systems' well (radius RADIUS_CARD), so its corners are that much tighter to stay concentric.
+const ROW_RADIUS: u8 = RADIUS_CARD;
+
 fn item(ui: &mut Ui, active: bool, icon: &str, title: &str, sub: Option<&str>, right: impl FnOnce(&egui::Painter, egui::Rect)) -> bool {
     let h = if sub.is_some() { 38.0 } else { 28.0 };
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, active, title));
+    crate::widgets::focus_ring(ui, r, ROW_RADIUS, &resp);
     // the selection itself is one rect that glides between items (`glide`); here its position is recorded, and the text and hover fade
     if active { ui.data_mut(|d| d.insert_temp(egui::Id::new("sidebar_active"), r)); }
     let (on, hot) = (crate::motion::fade(ui.ctx(), resp.id.with("on"), active), crate::motion::fade(ui.ctx(), resp.id.with("hot"), resp.hovered()));
     let p = ui.painter();
-    if hot > 0.0 { p.rect_filled(r, 0.0, SECONDARY.gamma_multiply(hot * (1.0 - on))); }
+    if hot * (1.0 - on) > 0.0 { p.add(crate::widgets::plate_shapes(r, SECONDARY, hot * (1.0 - on))); }
     let col = crate::motion::mix(FOREGROUND, Color32::WHITE, on);
     let y = if sub.is_some() { r.top() + 13.0 } else { r.center().y };
     p.text(egui::pos2(r.left() + 20.0, r.center().y), Align2::CENTER_CENTER, icon, sans(16.0), crate::motion::mix(MUTED_FG, Color32::WHITE, on));
     p.text(egui::pos2(r.left() + 38.0, y), Align2::LEFT_CENTER, title, sans(13.0), col);
-    if let Some(s) = sub { p.text(egui::pos2(r.left() + 38.0, r.top() + 28.0), Align2::LEFT_CENTER, s, sans(11.0), MUTED_FG); }
+    if let Some(s) = sub { p.text(egui::pos2(r.left() + 38.0, r.top() + 28.0), Align2::LEFT_CENTER, s, sans(11.0), crate::motion::mix(MUTED_FG, Color32::WHITE, on)); }
     right(p, r);
     resp.clicked()
 }
 
-/// The selection: a blue bevelled rect that slides to the selected item (its top and bottom each settle on their own, so it
-/// stretches a little on the way, as it would on a screen of glass). Drawn into two reserved spots in the paint order, one
+/// The selection: a flat blue rect that slides to the selected item (its top and bottom each settle on their own, so it
+/// stretches a little on the way). Drawn into two reserved spots in the paint order, one
 /// below everything (for the Overview and History rows) and one just above the systems' well (which paints over the first).
 fn glide(ui: &Ui, under: egui::layers::ShapeIdx, in_well: egui::layers::ShapeIdx, well: egui::Rect) {
     let Some(r) = ui.data(|d| d.get_temp::<egui::Rect>(egui::Id::new("sidebar_active"))) else { return };
     let top = crate::motion::settle(ui.ctx(), egui::Id::new("sb_top"), r.top());
     let bottom = crate::motion::settle(ui.ctx(), egui::Id::new("sb_bottom"), r.bottom());
     let g = egui::Rect::from_min_max(egui::pos2(r.left(), top), egui::pos2(r.right(), bottom));
-    let shape = egui::Shape::Vec(vec![
-        egui::Shape::rect_filled(g, 0.0, ACCENT),
-        egui::Shape::line_segment([g.left_top() + vec2(0.5, 0.5), g.right_top() + vec2(-0.5, 0.5)], Stroke::new(1.0, HI)),
-        egui::Shape::line_segment([g.left_top() + vec2(0.5, 0.5), g.left_bottom() + vec2(0.5, -0.5)], Stroke::new(1.0, HI)),
-        egui::Shape::line_segment([g.left_bottom() + vec2(0.5, -0.5), g.right_bottom() + vec2(-0.5, -0.5)], Stroke::new(1.0, LO)),
-        egui::Shape::line_segment([g.right_top() + vec2(-0.5, 0.5), g.right_bottom() + vec2(-0.5, -0.5)], Stroke::new(1.0, LO)),
-    ]);
+    let shape = crate::widgets::plate_shapes(g, ACCENT, 1.0);
     ui.painter().set(under, shape.clone());
     ui.painter().with_clip_rect(well).set(in_well, shape);
 }
@@ -57,8 +56,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
         });
     });
     let list = ui.available_rect_before_wrap();
-    ui.painter().rect_filled(list, 0.0, BACKGROUND);
-    crate::widgets::sunken(ui, list);
+    ui.painter().add(crate::widgets::well_shapes(list));
     let in_well = ui.painter().add(egui::Shape::Noop);
     let ecus = app.ecus.clone();
     ui.scope_builder(egui::UiBuilder::new().max_rect(list.shrink(3.0)), |ui| egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -77,7 +75,9 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                     p.rect_stroke(rr, 0.0, Stroke::new(1.0, c.gamma_multiply(0.6)), egui::StrokeKind::Inside);
                     p.text(rr.center(), Align2::CENTER_CENTER, n.to_string(), crate::theme::mono_bold(11.0), c);
                 } else if !loading {
-                    p.circle_filled(r.right_center() - vec2(16.0, 0.0), 3.0, c.gamma_multiply(0.8));
+                    // a shape as well as a colour: a check for no codes, a dash for not read
+                    let icon = status_icon(c).unwrap_or(egui_phosphor::regular::MINUS_CIRCLE);
+                    p.text(r.right_center() - vec2(18.0, 0.0), Align2::CENTER_CENTER, icon, sans(14.0), c);
                 }
             });
             if clicked { app.view = View::System(key); }

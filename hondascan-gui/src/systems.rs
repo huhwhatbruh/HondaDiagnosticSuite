@@ -6,10 +6,10 @@ pub struct Info { pub name: String, pub blurb: String, pub zone: &'static str, p
 pub fn zone(id: &str) -> (f32, f32, bool) {
     match id {
         "engine" => (840.0, 220.0, true), "transmission" => (745.0, 272.0, false), "brakes" => (771.0, 47.0, true),
-        "motor" => (760.0, 318.0, false), "steering" => (690.0, 160.0, false), "meter" => (622.0, 150.0, true),
+        "motor" => (760.0, 318.0, false), "steering" => (622.0, 150.0, false), "meter" => (690.0, 160.0, true),
         "hud" => (650.0, 228.0, false), "camera" => (572.0, 236.0, false), "airbags" => (488.0, 222.0, true),
         "gateway" => (640.0, 292.0, false), "front" => (925.0, 220.0, true), "tires" => (254.0, 47.0, true),
-        "parking" => (254.0, 393.0, false), "shifter" => (450.0, 290.0, false), "battery" => (340.0, 222.0, true),
+        "parking" => (254.0, 318.0, false), "shifter" => (450.0, 290.0, false), "battery" => (340.0, 222.0, true),
         "rear" => (254.0, 222.0, true), _ => (400.0, 330.0, false),
     }
 }

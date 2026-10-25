@@ -8,7 +8,7 @@ use crate::widgets::{button_x, label, window, Kind};
 use chrono::{Local, TimeZone};
 use eframe::egui::{self, vec2, Align2, Color32, Frame, Margin, RichText, Sense, Ui};
 
-/// A row's dot colour: the same rules as the car page's circles (an unread system is never green).
+/// A row's status colour (its count text): the same rules as the car page's circles (an unread system is never green).
 fn tone(h: &SysHealth) -> Health {
     if h.unknown { Health::Unknown }
     else if h.confirmed > 0 { Health::Fault }
@@ -62,11 +62,10 @@ pub fn show(ui: &mut Ui, app: &mut App) {
         ui.separator();
         for h in &s.systems {
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
-            if resp.hovered() { ui.painter().rect_filled(r, 4.0, MUTED); }
+            if resp.hovered() { ui.painter().rect_filled(r, 0.0, MUTED); }
             let col = tone(h).color();
             let (y, x) = (r.center().y, r.left() + 14.0);
-            ui.painter().circle_filled(egui::pos2(x, y), 3.0, col);
-            ui.painter().text(egui::pos2(x + 14.0, y), Align2::LEFT_CENTER, &h.name, sans(13.0), FOREGROUND);
+            ui.painter().text(egui::pos2(x, y), Align2::LEFT_CENTER, &h.name, sans(13.0), FOREGROUND);
             let counts = if h.unknown { "not read".to_string() } else {
                 let mut bits: Vec<String> = vec![];
                 if h.confirmed > 0 { bits.push(format!("{} confirmed", h.confirmed)); }
@@ -79,7 +78,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
             let tip = if h.unknown { format!("{}: codes not known (open the system to read them)", h.name) }
                 else { format!("{}: {}. Click to open.", h.name, detail) };
             if resp.on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { open = Some(h.key.clone()); }
-            ui.painter().line_segment([r.left_bottom(), r.right_bottom()], egui::Stroke::new(1.0, Color32::from_white_alpha(14)));
+            ui.painter().line_segment([r.left_bottom(), r.right_bottom()], egui::Stroke::new(1.0, BORDER));
         }
         ui.add_space(8.0);
         ui.separator();
@@ -158,7 +157,7 @@ fn baseline_card(ui: &mut Ui, app: &mut App) {
     let gate = can_freeze(&app.ecus, &app.dtcs, app.vin.as_deref());
     let vin = app.vin.clone();
     ui.horizontal_wrapped(|ui| {
-        let r = button_x(ui, Some(egui_phosphor::regular::SNOWFLAKE), "Save reference snapshot", Kind::Primary, gate.is_ok());
+        let r = button_x(ui, Some(egui_phosphor::regular::FLOPPY_DISK), "Save reference snapshot", Kind::Primary, gate.is_ok());
         let r = if let Err(why) = &gate { r.on_hover_text(format!("Not yet: {why}.")) }
             else { r.on_hover_text("Stores today's trouble codes, readiness and self-tests as this car's own reference. It cannot be edited or removed later.") };
         if r.clicked() { app.freeze = Some(FreezeDialog::default()); }

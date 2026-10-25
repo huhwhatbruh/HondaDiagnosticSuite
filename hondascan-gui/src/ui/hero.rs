@@ -77,8 +77,9 @@ pub fn show(ui: &mut Ui, app: &App) {
     else { ("Ignition on, engine off.".into(), "Start it and these numbers come alive.".into()) };
 
     let w = ui.available_width();
-    let frame = card().inner_margin(egui::Margin { left: 27, right: 24, top: 22, bottom: 24 }).show(ui, |ui| {
+    card(ui, egui::Margin { left: 27, right: 24, top: 22, bottom: 24 }, |ui| {
         ui.set_width(w - 53.0);
+        let head = if tone == OK { head } else { format!("{}  {head}", status_icon(tone).unwrap_or_default()) };
         ui.label(RichText::new(head).font(bold(30.0)).color(if tone == OK { FOREGROUND } else { tone }));
         ui.label(RichText::new(sub).font(sans(14.0)).color(MUTED_FG));
         ui.add_space(18.0);
@@ -91,6 +92,4 @@ pub fn show(ui: &mut Ui, app: &App) {
             ui.allocate_ui_with_layout(vec2(col, 80.0), egui::Layout::top_down(egui::Align::Min), |ui| { ui.set_min_size(vec2(col, 80.0)); knock(ui, app) });
         });
     });
-    let r = frame.response.rect;
-    ui.painter().rect_filled(egui::Rect::from_min_size(r.min, vec2(3.0, r.height())), 0.0, tone);
 }

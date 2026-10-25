@@ -1,7 +1,7 @@
 //! Toasts: slide in from the right on the app's one easing (`motion::ease`), fade out, never more than three. Newest at the bottom.
 use crate::motion::ease;
 use crate::theme::*;
-use eframe::egui::{self, pos2, vec2, Color32, Context, Id, Order, Stroke};
+use eframe::egui::{self, pos2, vec2, Color32, Context, Id, Order};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Level { Info, Success, Warn, Error }
@@ -34,21 +34,24 @@ impl Toasts {
             let age = now - t.born;
             let (slide, alpha) = if age < IN { (1.0 - ease((age / IN) as f32), ((age / IN) as f32).clamp(0.0, 1.0).powf(0.7)) }
                 else if age > t.ttl { (0.0, 1.0 - ((age - t.ttl) / OUT) as f32) } else { (0.0, 1.0) };
-            let edge = match t.level { Level::Error => FAULT, Level::Warn => WARN, Level::Success => OK, Level::Info => MUTED_FG };
+            let (tone, icon) = match t.level {
+                Level::Error => (FAULT, egui_phosphor::regular::X_CIRCLE), Level::Warn => (WARN, egui_phosphor::regular::WARNING),
+                Level::Success => (OK, egui_phosphor::regular::CHECK_CIRCLE), Level::Info => (Color32::WHITE, egui_phosphor::regular::INFO),
+            };
             let a = |c: Color32| c.gamma_multiply(alpha);
-            let galley = ctx.fonts_mut(|f| f.layout(t.text.clone(), sans(13.0), a(MUTED_FG), 330.0));
+            let galley = ctx.fonts_mut(|f| f.layout(t.text.clone(), sans(13.0), a(MUTED_FG), 306.0));
             let head = ctx.fonts_mut(|f| f.layout_no_wrap(t.title.clone(), bold(13.0), a(FOREGROUND)));
             let h = if t.title.is_empty() { galley.size().y } else { head.size().y + 3.0 + galley.size().y } + 24.0;
             let (w, x) = (366.0, screen.right() - 16.0 + slide * 40.0);
             let rect = egui::Rect::from_min_size(pos2(x - w, y - h), vec2(w, h));
             egui::Area::new(Id::new(("toast", &t.id))).order(Order::Tooltip).fixed_pos(rect.min).interactable(false).show(ctx, |ui| {
                 let p = ui.painter();
-                p.rect_filled(rect.translate(vec2(0.0, 6.0)).expand(2.0), 0.0, Color32::from_black_alpha((90.0 * alpha) as u8));
-                p.rect_filled(rect, 0.0, a(POPOVER));
-                p.rect_stroke(rect, 0.0, Stroke::new(1.0, a(Color32::BLACK)), egui::StrokeKind::Inside);
-                p.rect_filled(egui::Rect::from_min_size(rect.min, vec2(3.0, h)), 0.0, a(edge));
-                let mut at = rect.min + vec2(16.0, 12.0);
-                if !t.title.is_empty() { let hh = head.size().y; p.galley(at, head, Color32::WHITE); at.y += hh + 3.0; }
+                p.rect_filled(rect.translate(vec2(0.0, 6.0)).expand(2.0), RADIUS_WINDOW, Color32::from_black_alpha((90.0 * alpha) as u8));
+                p.add(crate::widgets::outlined(ctx, rect, RADIUS_WINDOW, a(POPOVER), a(OUTLINE)));
+                // the level shows as an icon and in the title's colour: never by colour alone
+                p.text(rect.min + vec2(16.0, 12.0), egui::Align2::LEFT_TOP, icon, sans(15.0), a(tone));
+                let mut at = rect.min + vec2(40.0, 12.0);
+                if !t.title.is_empty() { let hh = head.size().y; p.galley(at, head, a(tone)); at.y += hh + 3.0; }
                 p.galley(at, galley, MUTED_FG);
             });
             y -= h + 10.0;

@@ -10,7 +10,6 @@ const GAP: f32 = 12.0;
 
 pub fn show(ui: &mut Ui, app: &mut App) {
     if app.link != Link::Connected { return welcome(ui, app); }
-    app.turntable = None;
     ui.spacing_mut().item_spacing.y = GAP;
     hero::show(ui, app);
     health::show(ui, app);
@@ -40,7 +39,7 @@ fn welcome(ui: &mut Ui, app: &mut App) {
     ui.vertical_centered(|ui| {
         ui.set_max_width(w);
         ui.add_space(8.0);
-        app.turntable.get_or_insert_with(crate::ui::turntable::Turntable::new).show(ui, w * 0.9);
+        ui.add_space(150.0);
         ui.add_space(6.0);
         ui.label(RichText::new("Let’s look at your car").font(bold(22.0)));
         ui.label(RichText::new("Honda diagnostics: every system, its trouble codes and all live data.").size(13.0).color(MUTED_FG));
@@ -51,7 +50,7 @@ fn welcome(ui: &mut Ui, app: &mut App) {
             ui.spacing_mut().item_spacing.x = gap;
             for (i, (t, d)) in steps.iter().enumerate() {
                 ui.allocate_ui_with_layout(vec2(cw, 92.0), Layout::top_down(egui::Align::Min), |ui| {
-                    egui::Frame::NONE.fill(CARD).stroke(egui::Stroke::new(1.0, egui::Color32::BLACK)).inner_margin(egui::Margin::same(14)).show(ui, |ui| {
+                    crate::widgets::card(ui, egui::Margin::same(14), |ui| {
                         ui.set_width(cw - 30.0);
                         ui.set_min_height(64.0);
                         ui.horizontal(|ui| {

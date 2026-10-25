@@ -4,6 +4,9 @@
 pub mod abs_probe;
 pub mod drive_series;
 pub mod elm_addressing;
+// the GD101 probes use termios2 and /proc/<pid>/mem of a Wine process: Linux only
+#[cfg(target_os = "linux")]
 pub mod gd101_hello;
+#[cfg(target_os = "linux")]
 pub mod gd101_pt_dump;
 pub mod profile_from_capture;

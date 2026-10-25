@@ -27,7 +27,7 @@ fn arc(c: Pos2, r: f32, from: f32, to: f32) -> Vec<Pos2> {
     (0..=steps).map(|i| { let a = (from + (to - from) * i as f32 / steps as f32).to_radians(); c + vec2(a.cos(), a.sin()) * r }).collect()
 }
 
-/// A 270 degree arc, filled to `frac` (0..1), with the value in the middle and the name under it.
+/// A 270 degree arc, filled to `frac` (0..1), with the value in the middle and the name under it; out of range, its icon above the value.
 pub fn gauge(ui: &Ui, r: Rect, frac: Option<f32>, text: &str, unit: &str, label: &str, tone: Tone) {
     let (start, sweep) = (135.0f32, 270.0f32);
     let size = r.width().min(r.height());
@@ -44,7 +44,9 @@ pub fn gauge(ui: &Ui, r: Rect, frac: Option<f32>, text: &str, unit: &str, label:
         let d = vec2(a.cos(), a.sin());
         ui.painter().line_segment([c + d * rad * 0.79, c + d * rad * 0.845], Stroke::new(1.0, Color32::from_white_alpha(50)));
     }
-    ui.painter().text(c + vec2(0.0, size * 0.01), Align2::CENTER_CENTER, text, bold((size * 0.17).clamp(16.0, 30.0)), FOREGROUND);
-    ui.painter().text(c + vec2(0.0, size * 0.16), Align2::CENTER_CENTER, unit, sans(12.0), MUTED_FG);
+    // a warning or a fault also shows as its icon, never by the arc's colour alone (HIG Accessibility)
+    if let Some(icon) = status_icon(col) { ui.painter().text(c - vec2(0.0, size * 0.29), Align2::CENTER_CENTER, icon, sans(14.0), col); }
+    ui.painter().text(c - vec2(0.0, size * 0.125), Align2::CENTER_CENTER, text, bold((size * 0.17).clamp(16.0, 30.0)), FOREGROUND);
+    ui.painter().text(c + vec2(0.0, size * 0.025), Align2::CENTER_CENTER, unit, sans(12.0), MUTED_FG);
     ui.painter().text(pos2(r.center().x, r.bottom() - 8.0), Align2::CENTER_CENTER, label, sans(11.0), MUTED_FG);
 }

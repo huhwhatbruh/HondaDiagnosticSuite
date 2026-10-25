@@ -133,14 +133,7 @@ impl Recorder {
     /// As `new`, with the maps' (warm-engine temperature, samples per cell) overridden: for tests that run a short drive.
     pub fn with_map_limits(store: Arc<Store>, capture: Option<Arc<CaptureLog>>, vin: &str, adapter: &str, ecus: Vec<EcuInfo>, scan_s: f64, limits: Option<(f64, f64)>) -> std::io::Result<Recorder> {
         let t0 = now();
-        let stamp = unsafe {
-            let tt = t0 as libc::time_t;
-            let mut tm: libc::tm = std::mem::zeroed();
-            libc::localtime_r(&tt, &mut tm);
-            let mut buf = [0u8; 32];
-            let n = libc::strftime(buf.as_mut_ptr() as *mut _, buf.len(), c"%Y-%m-%d_%H%M%S".as_ptr(), &tm);
-            String::from_utf8_lossy(&buf[..n]).into_owned()
-        };
+        let stamp = crate::localtime::folder_stamp(t0);
         let base: PathBuf = store.root.join("vehicles").join(vin).join(&stamp);
         let mut folder = base.clone();
         let mut n = 1;

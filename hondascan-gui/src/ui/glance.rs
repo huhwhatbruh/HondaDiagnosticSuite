@@ -5,7 +5,7 @@ use crate::live::Live;
 use crate::theme::*;
 use crate::ui::tile;
 use crate::widgets::window;
-use eframe::egui::{self, vec2, Color32, Rect, Stroke, Ui};
+use eframe::egui::{self, vec2, Rect, Stroke, Ui};
 
 pub struct Def { pub types: &'static [&'static str], pub title: &'static str, pub from: &'static str, pub hero: &'static [&'static str],
     pub gauges: &'static [&'static str], pub tiles: &'static [&'static str] }
@@ -44,7 +44,7 @@ pub fn show(ui: &mut Ui, app: &mut App, idx: usize) {
         let (gh, th) = (cw.min(170.0) + 10.0, 118.0);
         let total = rows(gauges.len()) as f32 * gh + rows(tiles.len()) as f32 * th;
         let (area, _) = ui.allocate_exact_size(vec2(w, total + 1.0), egui::Sense::hover());
-        let line = Stroke::new(1.0, Color32::from_white_alpha(18));
+        let line = Stroke::new(1.0, BORDER);
         let mut y = area.top();
         for (set, h, as_gauge) in [(&gauges, gh, true), (&tiles, th, false)] {
             for (n, s) in set.iter().enumerate() {

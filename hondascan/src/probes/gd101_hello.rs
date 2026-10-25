@@ -56,10 +56,7 @@ pub fn hex_spaced(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect::<Vec<_>>().join(" ")
 }
 
-// The termios2/custom-baud ioctl interface is Linux-specific. Implement the real behaviour only on Linux
-// and provide a non-Linux stub so the crate builds on macOS/Windows runners during CI.
-
-#[cfg(target_os = "linux")]
+/// The termios2/custom-baud ioctl interface is Linux-specific (the module is only built there, see probes/mod.rs).
 mod linux {
     use super::*;
     /// Linux `struct termios2` (asm-generic): the kernel's custom-baud interface.
@@ -144,17 +141,9 @@ mod linux {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-fn run_non_linux(_args: &[String], _out: &mut dyn std::io::Write) -> Result<(), String> {
-    Err(String::from("gd101-hello: not supported on this OS (Socket/termios2 interfaces are Linux-only)"))
-}
-
-/// Public run entry-point: dispatch to the OS-appropriate implementation.
+/// Public run entry-point.
 pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    return linux::run_linux(args, out);
-    #[cfg(not(target_os = "linux"))]
-    return run_non_linux(args, out);
+    linux::run_linux(args, out)
 }
 
 #[cfg(test)]

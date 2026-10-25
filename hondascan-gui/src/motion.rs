@@ -1,12 +1,22 @@
-//! The app's motion, in one place: one easing, a few durations, and `HONDASCAN_REDUCE_MOTION=1` to turn all of it off (every
-//! duration becomes 0, so each animation lands on its final frame at once: for people who want that, and stable screenshots).
+//! The app's motion, in one place: one easing, a few durations, and Reduce Motion (HIG Accessibility: "be cautious with
+//! fast-moving and blinking animations"): `HONDASCAN_REDUCE_MOTION=1`, or the desktop's own setting (GNOME: animations off)
+//! turns all of it off. Every duration becomes 0, so each animation lands on its final frame at once, the turntable stops
+//! turning on its own and the pulsing dots hold still: for people who want that, and stable screenshots.
 //! egui asks for a repaint only while one of these is still moving, so a still screen costs nothing.
 use eframe::egui::{Color32, Context, Id};
 use std::sync::OnceLock;
 
-fn reduced() -> bool {
+/// `gsettings get org.gnome.desktop.interface enable-animations` prints `false` when animations are off.
+fn animations_off(gsettings_output: &str) -> bool { gsettings_output.trim() == "false" }
+
+pub fn reduced() -> bool {
     static R: OnceLock<bool> = OnceLock::new();
-    *R.get_or_init(|| std::env::var_os("HONDASCAN_REDUCE_MOTION").is_some_and(|v| v != "0"))
+    *R.get_or_init(|| {
+        if let Some(v) = std::env::var_os("HONDASCAN_REDUCE_MOTION") { return v != "0"; }
+        // read once at start-up; a missing gsettings (not GNOME) or an unreadable answer means animations stay on
+        std::process::Command::new("gsettings").args(["get", "org.gnome.desktop.interface", "enable-animations"]).output()
+            .ok().filter(|o| o.status.success()).is_some_and(|o| animations_off(&String::from_utf8_lossy(&o.stdout)))
+    })
 }
 
 /// A duration in seconds, or 0 with reduced motion.
@@ -38,6 +48,13 @@ pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 { a.lerp_to_gamma(b, t) }
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gsettings_false_means_animations_are_off() {
+        assert!(animations_off("false\n"));
+        assert!(!animations_off("true\n"));
+        assert!(!animations_off(""), "an unreadable answer leaves animations on");
+    }
 
     #[test]
     fn the_easing_starts_at_zero_ends_at_one_and_never_goes_back() {

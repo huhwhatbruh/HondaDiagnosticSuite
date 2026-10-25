@@ -5,9 +5,11 @@
 //! adapters (0x55 padding, flow control 30 00 00), and the capture log and replay work unchanged. The device's own ISO 15765 layer
 //! is not used: it would hide the frames and pad them with its own byte.
 //!
-//! The library must export the J2534 C API with the platform's C calling convention (a Linux build; the Windows DLLs are stdcall
-//! and cannot be loaded here). For the GODIAG GD101 that is hondascan's own driver, gd101_j2534.c (C: it is a C API; `gd101_library()`
-//! builds it once with the system C compiler); other devices with a Linux J2534 library work as `j2534:/path/to/lib.so`.
+//! The library must export the J2534 C API. On Linux that is a shared library with the C calling convention; for the GODIAG GD101
+//! it is hondascan's own driver, gd101_j2534.c (C: it is a C API; `gd101_library()` builds it once with the system C compiler),
+//! and other devices with a Linux J2534 library work as `j2534:/path/to/lib.so`. On Windows it is the maker's J2534 DLL, named by
+//! path or by the name it registered under HKLM\SOFTWARE\PassThruSupport.04.04 (`registered_libraries()`); x86_64 has one calling
+//! convention, so stdcall and C are the same there. Most of those DLLs are 32-bit and load only into a 32-bit hondascan.
 use super::can::{now, BusCore, CanBus, CanFrame, CaptureLog, CAN_EFF_MASK};
 use std::ffi::{c_char, c_long, c_ulong, c_void};
 use std::io;
@@ -132,7 +134,7 @@ fn buf_text(b: &[c_char]) -> String {
 impl J2534Library {
     pub fn load(path: &str) -> Result<J2534Library, J2534Error> {
         unsafe {
-            let lib = libloading::Library::new(path).map_err(|e| J2534Error::other(format!("{path}: {e}")))?;
+            let lib = libloading::Library::new(path).map_err(|e| J2534Error::other(format!("{path}: {e}{}", wrong_bitness_hint(&e))))?;
             macro_rules! sym {
                 ($name:literal, $t:ty) => {
                     *lib.get::<$t>(concat!($name, "\0").as_bytes()).map_err(|e| J2534Error::other(format!("{path}: {e}")))?
@@ -222,6 +224,45 @@ impl J2534Library {
     }
 }
 
+/// Windows refuses to load a DLL of the other bitness (ERROR_BAD_EXE_FORMAT, 193).
+fn wrong_bitness_hint(e: &libloading::Error) -> &'static str {
+    if cfg!(windows) && e.to_string().contains("193") { " (a 32-bit J2534 DLL loads only into the 32-bit hondascan, a 64-bit one only into the 64-bit)" } else { "" }
+}
+
+/// [(name, library path)] of the J2534 devices installed on this machine (Windows registry, 04.04 API, both the 64-bit and the
+/// 32-bit view). Always empty off Windows, where `j2534:` takes the library path.
+#[cfg(windows)]
+pub fn registered_libraries() -> Vec<(String, String)> {
+    use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_32KEY, KEY_WOW64_64KEY};
+    let mut out: Vec<(String, String)> = vec![];
+    for view in [KEY_WOW64_64KEY, KEY_WOW64_32KEY] {
+        let Ok(root) = winreg::RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags(r"SOFTWARE\PassThruSupport.04.04", KEY_READ | view) else { continue };
+        for vendor in root.enum_keys().filter_map(Result::ok) {
+            let Ok(k) = root.open_subkey(&vendor) else { continue };
+            let Ok(lib) = k.get_value::<String, _>("FunctionLibrary") else { continue };
+            let name = k.get_value::<String, _>("Name").unwrap_or(vendor);
+            if !out.iter().any(|(_, l)| l.eq_ignore_ascii_case(&lib)) {
+                out.push((name, lib));
+            }
+        }
+    }
+    out
+}
+
+#[cfg(not(windows))]
+pub fn registered_libraries() -> Vec<(String, String)> {
+    vec![]
+}
+
+/// The library for `j2534:ARG`: a path that exists, else the registered device whose name contains ARG (case-insensitive).
+pub fn resolve_library(arg: &str) -> String {
+    if Path::new(arg).exists() {
+        return arg.to_string();
+    }
+    let want = arg.to_lowercase();
+    registered_libraries().into_iter().find(|(name, _)| name.to_lowercase().contains(&want)).map_or_else(|| arg.to_string(), |(_, lib)| lib)
+}
+
 /// Where the GD101 driver's C source is.
 pub fn gd101_source() -> PathBuf {
     if let Ok(p) = std::env::var("HONDASCAN_GD101_SRC") {
@@ -231,6 +272,17 @@ pub fn gd101_source() -> PathBuf {
 }
 
 /// The GD101 driver built from gd101_j2534.c with the system C compiler, cached until the source changes.
+#[cfg(windows)]
+pub fn gd101_library() -> Result<PathBuf, J2534Error> {
+    // the maker's DLL (GODIAG_PT32.dll) registers itself when its driver package is installed
+    registered_libraries()
+        .into_iter()
+        .find(|(name, lib)| [name, lib].iter().any(|t| ["gd101", "godiag"].iter().any(|k| t.to_lowercase().contains(k))))
+        .map(|(_, lib)| PathBuf::from(lib))
+        .ok_or_else(|| J2534Error::other(r"no GODIAG GD101 J2534 DLL is registered: install GODIAG's driver package, or give the DLL as j2534:C:\path\to\GODIAG_PT32.dll"))
+}
+
+#[cfg(not(windows))]
 pub fn gd101_library() -> Result<PathBuf, J2534Error> {
     let src = gd101_source();
     let cache = std::env::var("XDG_CACHE_HOME").ok().filter(|s| !s.is_empty()).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache")).join("hondascan");
@@ -254,6 +306,7 @@ pub fn gd101_library() -> Result<PathBuf, J2534Error> {
     Ok(lib)
 }
 
+#[cfg(not(windows))]
 fn which(cmd: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join(cmd)).find(|f| f.is_file()))
 }

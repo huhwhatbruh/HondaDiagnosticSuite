@@ -82,7 +82,7 @@ pub fn show(ui: &mut Ui, ecu: &Ecu, state: Option<&DtcState>, name: &str, also: 
         *asking = if close || m.should_close() { None } else { Some(ticked) };
     }
     if state.is_some_and(|s| s.dtcs.is_some()) && list.is_empty() {
-        card().inner_margin(Margin::symmetric(0, 40)).show(ui, |ui| {
+        card(ui, Margin::symmetric(0, 40), |ui| {
             ui.set_width(ui.available_width());
             ui.vertical_centered(|ui| {
                 ui.label(RichText::new("No trouble codes").font(bold(16.0)).color(OK));
@@ -93,7 +93,7 @@ pub fn show(ui: &mut Ui, ecu: &Ecu, state: Option<&DtcState>, name: &str, also: 
     for d in list {
         let (notes, causes) = parse_help(d);
         let (kl, kc) = kind(&d.kind);
-        card().show(ui, |ui| {
+        card(ui, egui::Margin::ZERO, |ui| {
             ui.set_width(ui.available_width());
             Frame::NONE.inner_margin(Margin::same(16)).show(ui, |ui| {
                 ui.set_width(ui.available_width());

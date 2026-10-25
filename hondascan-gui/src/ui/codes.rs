@@ -4,7 +4,7 @@ use crate::format::tidy;
 use crate::systems::info;
 use crate::theme::*;
 use crate::widgets::window;
-use eframe::egui::{self, vec2, Align2, Color32, RichText, Sense, Ui};
+use eframe::egui::{self, vec2, Align2, RichText, Sense, Ui};
 
 pub fn show(ui: &mut Ui, app: &mut App, height: f32) {
     let faults: Vec<(usize, crate::api::Dtc)> = app.ecus.iter().enumerate()
@@ -45,7 +45,7 @@ pub fn show(ui: &mut Ui, app: &mut App, height: f32) {
                 ui.painter().text(r.left_top() + vec2(32.0, 18.0), Align2::LEFT_CENTER, d.full(), mono_bold(13.0), FOREGROUND);
                 ui.painter().text(r.right_top() + vec2(-14.0, 18.0), Align2::RIGHT_CENTER, info(&e.system_type, &e.display).name, sans(12.0), MUTED_FG);
                 ui.painter().galley(r.left_top() + vec2(32.0, 30.0), galley, MUTED_FG);
-                ui.painter().line_segment([r.left_bottom(), r.right_bottom()], egui::Stroke::new(1.0, Color32::from_white_alpha(14)));
+                ui.painter().line_segment([r.left_bottom(), r.right_bottom()], egui::Stroke::new(1.0, BORDER));
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { open = Some(e.key()); }
             }
             if !unread.is_empty() && !reading {

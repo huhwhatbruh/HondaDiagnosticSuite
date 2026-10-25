@@ -1,5 +1,6 @@
 //! Raw CAN frame I/O: SocketCAN (Linux), slcan/Lawicel serial adapters, an in-process virtual bus, and a
 //! candump-format capture log. Port of hondascan/transport/can.py.
+use super::serial::SerialPort;
 use std::collections::BTreeSet;
 use std::io;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
@@ -9,6 +10,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 pub const CAN_EFF_FLAG: u32 = 0x8000_0000;
 pub const CAN_EFF_MASK: u32 = 0x1FFF_FFFF;
 pub const CAN_SFF_MASK: u32 = 0x7FF;
+/// "No buffer space available": what a full transmit queue reports (SocketCAN's txqueuelen, a J2534 device's buffer).
+#[cfg(unix)]
+pub const ENOBUFS: i32 = libc::ENOBUFS;
+#[cfg(windows)]
+pub const ENOBUFS: i32 = 10055; // WSAENOBUFS
 pub const WRITE_TIMEOUT_S: f64 = 2.0; // a serial device that takes nothing for this long is wedged
 
 pub fn now() -> f64 {
@@ -221,11 +227,11 @@ pub trait CanBus: Send + Sync {
         for _ in 0..500 {
             match self.send_raw(frame) {
                 Ok(()) => return Ok(()),
-                Err(e) if e.raw_os_error() == Some(libc::ENOBUFS) => std::thread::sleep(Duration::from_millis(2)),
+                Err(e) if e.raw_os_error() == Some(ENOBUFS) => std::thread::sleep(Duration::from_millis(2)),
                 Err(e) => return Err(e),
             }
         }
-        Err(io::Error::from_raw_os_error(libc::ENOBUFS))
+        Err(io::Error::from_raw_os_error(ENOBUFS))
     }
 
     /// Next frame, or None after `timeout` seconds.
@@ -249,244 +255,7 @@ pub trait CanBus: Send + Sync {
     }
 }
 
-/// CAN_RAW_FILTER value: one exact-match filter per extended id (the kernel ORs them).
-pub fn socketcan_filters(ids: &BTreeSet<u32>) -> Vec<u8> {
-    let mut out = vec![];
-    for i in ids {
-        out.extend(((i & CAN_EFF_MASK) | CAN_EFF_FLAG).to_ne_bytes());
-        out.extend((CAN_EFF_MASK | CAN_EFF_FLAG).to_ne_bytes());
-    }
-    out
-}
-
-// -- SocketCAN -----------------------------------------------------------------------------------------------------
-
-/// Linux SocketCAN raw socket (can0, vcan0, slcan0 after slcand, gs_usb/candleLight, PEAK, Kvaser...).
-pub struct SocketCanBus {
-    core: BusCore,
-    fd: libc::c_int,
-}
-
-impl SocketCanBus {
-    pub fn open(iface: &str, log: Option<Arc<CaptureLog>>) -> io::Result<SocketCanBus> {
-        unsafe {
-            let fd = libc::socket(libc::AF_CAN, libc::SOCK_RAW, libc::CAN_RAW);
-            if fd < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            let mut ifr: libc::ifreq = std::mem::zeroed();
-            let name = std::ffi::CString::new(iface).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-            let b = name.as_bytes_with_nul();
-            if b.len() > ifr.ifr_name.len() {
-                libc::close(fd);
-                return Err(io::Error::new(io::ErrorKind::InvalidInput, "interface name too long"));
-            }
-            for (d, s) in ifr.ifr_name.iter_mut().zip(b) {
-                *d = *s as libc::c_char;
-            }
-            if libc::ioctl(fd, libc::SIOCGIFINDEX, &mut ifr) < 0 {
-                let e = io::Error::last_os_error();
-                libc::close(fd);
-                return Err(e);
-            }
-            let mut addr: libc::sockaddr_can = std::mem::zeroed();
-            addr.can_family = libc::AF_CAN as libc::sa_family_t;
-            addr.can_ifindex = ifr.ifr_ifru.ifru_ifindex;
-            if libc::bind(fd, &addr as *const _ as *const libc::sockaddr, std::mem::size_of::<libc::sockaddr_can>() as u32) < 0 {
-                let e = io::Error::last_os_error();
-                libc::close(fd);
-                return Err(e);
-            }
-            Ok(SocketCanBus { core: BusCore::with_log(log), fd })
-        }
-    }
-}
-
-impl CanBus for SocketCanBus {
-    fn core(&self) -> &BusCore {
-        &self.core
-    }
-
-    fn apply_filters(&self) {
-        let f = socketcan_filters(&self.ids());
-        unsafe {
-            libc::setsockopt(self.fd, libc::SOL_CAN_RAW, libc::CAN_RAW_FILTER, f.as_ptr() as *const _, f.len() as u32);
-        }
-    }
-
-    fn send_raw(&self, frame: &CanFrame) -> io::Result<()> {
-        let cid = if frame.extended { (frame.can_id & CAN_EFF_MASK) | CAN_EFF_FLAG } else { frame.can_id & CAN_SFF_MASK };
-        let mut raw = [0u8; 16]; // struct can_frame: can_id (u32), can_dlc (u8), 3 pad, data[8]
-        raw[..4].copy_from_slice(&cid.to_ne_bytes());
-        raw[4] = frame.data.len().min(8) as u8;
-        raw[8..8 + frame.data.len().min(8)].copy_from_slice(&frame.data[..frame.data.len().min(8)]);
-        let n = unsafe { libc::send(self.fd, raw.as_ptr() as *const _, 16, 0) };
-        if n < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
-    }
-
-    fn recv_raw(&self, timeout: f64) -> Option<CanFrame> {
-        let end = Instant::now() + secs(timeout);
-        loop {
-            let left = end.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                return None;
-            }
-            let mut p = libc::pollfd { fd: self.fd, events: libc::POLLIN, revents: 0 };
-            let r = unsafe { libc::poll(&mut p, 1, left.as_millis().min(i32::MAX as u128).max(1) as i32) };
-            if r <= 0 {
-                if r < 0 && io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
-                    return None;
-                }
-                continue;
-            }
-            let mut raw = [0u8; 16];
-            let n = unsafe { libc::recv(self.fd, raw.as_mut_ptr() as *mut _, 16, 0) };
-            if n < 16 {
-                continue;
-            }
-            let cid = u32::from_ne_bytes([raw[0], raw[1], raw[2], raw[3]]);
-            if cid & 0x6000_0000 != 0 {
-                continue; // RTR / error frames
-            }
-            let ext = cid & CAN_EFF_FLAG != 0;
-            let dlc = (raw[4] as usize).min(8);
-            return Some(CanFrame { can_id: cid & if ext { CAN_EFF_MASK } else { CAN_SFF_MASK }, data: raw[8..8 + dlc].to_vec(), extended: ext, timestamp: now() });
-        }
-    }
-
-    fn close(&self) {
-        unsafe {
-            libc::close(self.fd);
-        }
-    }
-}
-
 // -- serial + slcan ----------------------------------------------------------------------------------------------------
-
-/// Minimal raw termios serial port.
-pub struct SerialPort {
-    fd: libc::c_int,
-    lost: std::sync::atomic::AtomicBool,
-}
-
-fn baud_const(baud: u32) -> Option<libc::speed_t> {
-    Some(match baud {
-        9600 => libc::B9600,
-        38400 => libc::B38400,
-        57600 => libc::B57600,
-        115200 => libc::B115200,
-        230400 => libc::B230400,
-        460800 => libc::B460800,
-        500000 => libc::B500000,
-        921600 => libc::B921600,
-        1000000 => libc::B1000000,
-        2000000 => libc::B2000000,
-        _ => return None,
-    })
-}
-
-impl SerialPort {
-    pub fn supported_baud(baud: u32) -> bool {
-        baud_const(baud).is_some()
-    }
-
-    pub fn bauds() -> Vec<u32> {
-        vec![9600, 38400, 57600, 115200, 230400, 460800, 500000, 921600, 1000000, 2000000]
-    }
-
-    /// the port is gone: poll says HUP/ERR or a read hit EOF.
-    pub fn lost(&self) -> bool {
-        self.lost.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    pub fn open(path: &str, baud: u32) -> io::Result<SerialPort> {
-        let speed = baud_const(baud).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("unsupported baud {baud}")))?;
-        let busy = || io::Error::from_raw_os_error(libc::EBUSY);
-        let c = std::ffi::CString::new(path).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-        unsafe {
-            // one reader only: a second one (another hondascan, ModemManager probing with AT commands) takes replies
-            // meant for us and puts the adapter out of step. TIOCEXCL refuses later opens, flock another hondascan.
-            let fd = libc::open(c.as_ptr(), libc::O_RDWR | libc::O_NOCTTY | libc::O_NONBLOCK);
-            if fd < 0 {
-                let e = io::Error::last_os_error();
-                return Err(if e.raw_os_error() == Some(libc::EBUSY) { busy() } else { e });
-            }
-            if libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) < 0 || libc::ioctl(fd, libc::TIOCEXCL) < 0 {
-                libc::close(fd);
-                return Err(busy());
-            }
-            let mut t: libc::termios = std::mem::zeroed();
-            libc::tcgetattr(fd, &mut t);
-            t.c_iflag = 0;
-            t.c_oflag = 0;
-            t.c_cflag = libc::CS8 | libc::CREAD | libc::CLOCAL;
-            t.c_lflag = 0; // raw
-            libc::cfsetispeed(&mut t, speed);
-            libc::cfsetospeed(&mut t, speed);
-            t.c_cc[libc::VMIN] = 0;
-            t.c_cc[libc::VTIME] = 0;
-            libc::tcsetattr(fd, libc::TCSANOW, &t);
-            libc::tcflush(fd, libc::TCIOFLUSH);
-            Ok(SerialPort { fd, lost: std::sync::atomic::AtomicBool::new(false) })
-        }
-    }
-
-    /// All of `data`, or ETIMEDOUT when the device takes nothing for `timeout`.
-    pub fn write(&self, data: &[u8], timeout: f64) -> io::Result<()> {
-        let end = Instant::now() + secs(timeout);
-        let mut rest = data;
-        while !rest.is_empty() {
-            let left = end.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
-            }
-            let mut p = libc::pollfd { fd: self.fd, events: libc::POLLOUT, revents: 0 };
-            unsafe { libc::poll(&mut p, 1, left.as_millis().max(1) as i32) };
-            let n = unsafe { libc::write(self.fd, rest.as_ptr() as *const _, rest.len()) };
-            if n < 0 {
-                if io::Error::last_os_error().kind() == io::ErrorKind::WouldBlock {
-                    std::thread::sleep(Duration::from_millis(10)); // writable per poll, then EAGAIN: wait again
-                    continue;
-                }
-                return Err(io::Error::last_os_error());
-            }
-            rest = &rest[n as usize..];
-        }
-        Ok(())
-    }
-
-    /// Bytes that arrived within `timeout`, or empty. USB CDC ports can report readable and then fail with EAGAIN;
-    /// that is "nothing yet", not an error, and not lost: only HUP/ERR from the poll or EOF from the read set `lost`.
-    pub fn read(&self, timeout: f64) -> Vec<u8> {
-        let mut p = libc::pollfd { fd: self.fd, events: libc::POLLIN, revents: 0 };
-        let ms = (timeout.max(0.0) * 1000.0).ceil().min(i32::MAX as f64) as i32;
-        if unsafe { libc::poll(&mut p, 1, ms) } <= 0 {
-            return vec![];
-        }
-        if p.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
-            self.lost.store(true, std::sync::atomic::Ordering::Relaxed); // unplugged, or the driver gave the port up
-            return vec![];
-        }
-        let mut buf = [0u8; 4096];
-        let n = unsafe { libc::read(self.fd, buf.as_mut_ptr() as *mut _, buf.len()) };
-        if n > 0 { buf[..n as usize].to_vec() } else if n == 0 {
-            self.lost.store(true, std::sync::atomic::Ordering::Relaxed); // EOF: the adapter is gone
-            vec![]
-        } else if matches!(io::Error::last_os_error().kind(), io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted) {
-            vec![] // nothing yet, as before
-        } else {
-            self.lost.store(true, std::sync::atomic::Ordering::Relaxed);
-            vec![]
-        }
-    }
-
-    pub fn close(&self) {
-        unsafe {
-            libc::ioctl(self.fd, libc::TIOCNXCL); // the flag outlives us while another fd is open (a pty)
-            libc::close(self.fd);
-        }
-    }
-}
 
 /// Lawicel/slcan ASCII protocol over a serial port (CANable slcan firmware, USBtin, many clones).
 pub struct SlcanBus {
@@ -636,7 +405,7 @@ impl CanBus for VirtualEndpoint {
             let mut q = self.txq.lock().unwrap();
             q.retain(|t| *t > now_i);
             if q.len() >= TXQUEUELEN {
-                return Err(io::Error::from_raw_os_error(libc::ENOBUFS));
+                return Err(io::Error::from_raw_os_error(ENOBUFS));
             }
             let start = q.last().copied().unwrap_or(now_i).max(now_i);
             q.push(start + secs(FRAME_TIME));

@@ -200,8 +200,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
             let cols = ((w / 230.0).floor() as usize).max(1);
             let cw = w / cols as f32;
             let (area, _) = ui.allocate_exact_size(vec2(w, d.trends.len().div_ceil(cols) as f32 * 112.0), Sense::hover());
-            ui.painter().rect_filled(area, 0.0, CARD);
-            ui.painter().rect_stroke(area, 0.0, Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Outside);
+            crate::widgets::pane(ui, area);
             for (i, (k, rows)) in d.trends.iter().enumerate() {
                 let r = Rect::from_min_size(area.min + vec2((i % cols) as f32 * cw, (i / cols) as f32 * 112.0), vec2(cw, 112.0));
                 let unit = rows.last().map_or(String::new(), |t| crate::format::convert(0.0, &t.unit).1);
@@ -210,7 +209,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                 ui.painter().text(r.left_top() + vec2(16.0, 42.0), Align2::LEFT_CENTER, fmt(*means.back().unwrap_or(&0.0) as f64), bold(20.0), FOREGROUND);
                 sparkline(ui, Rect::from_min_size(pos2(r.left() + 16.0, r.top() + 54.0), vec2(cw - 32.0, 32.0)), &means);
                 ui.painter().text(r.left_top() + vec2(16.0, 98.0), Align2::LEFT_CENTER, format!("per-session mean, last {}", rows.len()), sans(11.0), MUTED_FG);
-                ui.painter().line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0, Color32::from_white_alpha(18)));
+                ui.painter().line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0, BORDER));
             }
         }
         ui.add_space(12.0);

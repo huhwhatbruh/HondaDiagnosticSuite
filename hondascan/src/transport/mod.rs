@@ -8,7 +8,11 @@ pub mod elm_kline;
 pub mod elm_link;
 pub mod isotp;
 pub mod j2534;
+pub mod ports;
 pub mod replay;
+pub mod serial;
+#[cfg(target_os = "linux")]
+pub mod socketcan;
 
 use can::{secs, CanBus, CanFrame};
 use isotp::{DiagLink, IsoTpError, IsoTpLink, LinkError, HDS_PAD};
@@ -164,57 +168,9 @@ impl std::fmt::Display for OpenError {
     }
 }
 
+pub use ports::{modem_manager_warning, serial_ports};
+
 pub const GD101_USB_ID: (&str, &str) = ("e327", "2534");
-
-/// [(device, vid, pid, product)] for USB serial ports, from sysfs.
-pub fn serial_ports() -> Vec<(String, String, String, String)> {
-    let mut devs: Vec<String> = vec![];
-    for prefix in ["ttyACM", "ttyUSB"] {
-        if let Ok(rd) = std::fs::read_dir("/dev") {
-            devs.extend(rd.filter_map(Result::ok).map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.starts_with(prefix)).map(|n| format!("/dev/{n}")));
-        }
-    }
-    devs.sort();
-    let mut out = vec![];
-    for dev in devs {
-        let base = std::path::Path::new(&dev).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
-        let mut d = std::fs::canonicalize(format!("/sys/class/tty/{base}/device")).unwrap_or_default();
-        let mut info: std::collections::HashMap<&str, String> = Default::default();
-        while d.as_os_str() != "/" && !d.as_os_str().is_empty() && !(info.contains_key("idVendor") && info.contains_key("idProduct")) {
-            for k in ["idVendor", "idProduct", "product"] {
-                if !info.contains_key(k) {
-                    if let Ok(v) = std::fs::read_to_string(d.join(k)) {
-                        info.insert(k, v.trim().to_string());
-                    }
-                }
-            }
-            d = d.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-        }
-        out.push((dev, info.remove("idVendor").unwrap_or_default(), info.remove("idProduct").unwrap_or_default(), info.remove("product").unwrap_or_default()));
-    }
-    out
-}
-
-/// ModemManager probes new serial ports with AT commands, which an ELM327 answers: replies go to the wrong reader and the
-/// adapter runs out of step or resets. A warning, or None when it is not running or the udev rule (packaging/60-hondascan.rules,
-/// ID_MM_DEVICE_IGNORE) tells it to leave `dev` alone.
-pub fn modem_manager_warning(dev: &str) -> Option<String> {
-    let running = std::fs::read_dir("/proc").ok()?.filter_map(Result::ok).any(|e| {
-        e.file_name().to_string_lossy().chars().all(|c| c.is_ascii_digit()) && std::fs::read_to_string(e.path().join("comm")).is_ok_and(|c| c.trim() == "ModemManager")
-    });
-    if !running {
-        return None;
-    }
-    use std::os::unix::fs::MetadataExt;
-    if let Ok(m) = std::fs::metadata(dev) {
-        let rdev = m.rdev();
-        let (major, minor) = (libc::major(rdev), libc::minor(rdev));
-        if std::fs::read_to_string(format!("/run/udev/data/c{major}:{minor}")).is_ok_and(|t| t.contains("E:ID_MM_DEVICE_IGNORE=1")) {
-            return None;
-        }
-    }
-    Some(format!("ModemManager is running and may probe {dev} with AT commands: install packaging/60-hondascan.rules and replug the adapter, or stop it (sudo systemctl stop ModemManager)"))
-}
 
 pub fn find_port(usb_id: Option<(&str, &str)>) -> Result<String, OpenError> {
     let mut ports = serial_ports();
@@ -225,8 +181,9 @@ pub fn find_port(usb_id: Option<(&str, &str)>) -> Result<String, OpenError> {
     ports.into_iter().next().map(|p| p.0).ok_or_else(|| OpenError {
         kind: "FileNotFoundError",
         message: format!(
-            "no {} found; plug it in, or give the port, e.g. elm:/dev/ttyACM0",
-            if usb_id.is_some() { "GODIAG GD101 (USB e327:2534)" } else { "USB serial adapter" }
+            "no {} found; plug it in, or give the port, e.g. elm:{}",
+            if usb_id.is_some() { "GODIAG GD101 (USB e327:2534)" } else { "USB serial adapter" },
+            if cfg!(windows) { "COM5" } else { "/dev/ttyACM0" }
         ),
     })
 }
@@ -238,10 +195,13 @@ pub fn open_adapter(spec: &str, log: Option<Arc<can::CaptureLog>>) -> Result<Arc
     let (path, num) = arg.split_once('@').unwrap_or((arg, ""));
     let io = |e: std::io::Error| OpenError { kind: "OSError", message: e.to_string() };
     match kind {
+        #[cfg(target_os = "linux")]
         "socketcan" => {
-            let bus = can::SocketCanBus::open(if path.is_empty() { "can0" } else { path }, log).map_err(io)?;
+            let bus = socketcan::SocketCanBus::open(if path.is_empty() { "can0" } else { path }, log).map_err(io)?;
             Ok(Arc::new(RawCanAdapter::new(Arc::new(bus), "SocketCanBus")))
         }
+        #[cfg(not(target_os = "linux"))]
+        "socketcan" => Err(OpenError { kind: "ValueError", message: "socketcan is Linux only; use slcan:, j2534: or an ELM327 adapter".into() }),
         "slcan" => {
             let rate = if num.is_empty() { 500000 } else { num.parse().map_err(|_| OpenError { kind: "ValueError", message: format!("bad bitrate {num:?}") })? };
             let bus = can::SlcanBus::open(path, rate, 115200, log).map_err(io)?;
@@ -275,15 +235,22 @@ pub fn open_adapter(spec: &str, log: Option<Arc<can::CaptureLog>>) -> Result<Arc
         "j2534" => {
             let lib = if arg.is_empty() { std::env::var("HONDASCAN_J2534").unwrap_or_default() } else { arg.to_string() };
             if lib.is_empty() {
-                return Err(OpenError { kind: "ValueError", message: "j2534 needs the library path: j2534:/path/to/libj2534.so, or set HONDASCAN_J2534".into() });
+                let installed: Vec<String> = j2534::registered_libraries().into_iter().map(|(n, _)| n).collect();
+                let message = if installed.is_empty() {
+                    r"j2534 needs the library path: j2534:/path/to/libj2534.so (j2534:C:\path	o\device.dll on Windows), or set HONDASCAN_J2534".into()
+                } else {
+                    format!("j2534 needs the library path or the name of an installed device: j2534:NAME, one of {}", installed.join(", "))
+                };
+                return Err(OpenError { kind: "ValueError", message });
             }
-            let bus = j2534::J2534CanBus::open(&lib, 500000, log, None).map_err(|e| OpenError { kind: "J2534Error", message: e.to_string() })?;
+            let bus = j2534::J2534CanBus::open(&j2534::resolve_library(&lib), 500000, log, None).map_err(|e| OpenError { kind: "J2534Error", message: e.to_string() })?;
             Ok(Arc::new(RawCanAdapter::new(Arc::new(bus), "J2534CanBus")))
         }
         "gd101-j2534" => {
             let lib = j2534::gd101_library().map_err(|e| OpenError { kind: "J2534Error", message: e.to_string() })?;
-            let name = if arg.is_empty() { find_port(Some(GD101_USB_ID))? } else { arg.to_string() };
-            let bus = j2534::J2534CanBus::open(&lib.to_string_lossy(), 500000, log, Some(&name)).map_err(|e| OpenError { kind: "J2534Error", message: e.to_string() })?;
+            // the Linux driver is given the serial port; the maker's Windows DLL finds the device itself
+            let name = if cfg!(windows) { None } else if !arg.is_empty() { Some(arg.to_string()) } else { Some(find_port(Some(GD101_USB_ID))?) };
+            let bus = j2534::J2534CanBus::open(&lib.to_string_lossy(), 500000, log, name.as_deref()).map_err(|e| OpenError { kind: "J2534Error", message: e.to_string() })?;
             Ok(Arc::new(RawCanAdapter::new(Arc::new(bus), "J2534CanBus")))
         }
         "replay" => {

@@ -241,6 +241,7 @@ pub fn from_env(inp: In, out: Out) -> Result<(In, Out), String> {
     let bluetooth = std::env::var("HONDASCAN_PHONE_BLE").map_or(true, |v| v != "off");
     let wired = attach_with(inp, out, &addr, &token, dir.as_deref(), bluetooth)?;
     // so the phone can find the laptop without a typed address; the gateway works without it
+    #[cfg(unix)]
     match addr.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()) {
         Some(port) => {
             if let Err(e) = crate::bonjour::advertise(crate::bonjour::Ad::for_this_host(port)) {
@@ -320,6 +321,9 @@ pub fn attach_with(inp: In, out: Out, addr: &str, token: &str, log_dir: Option<&
             });
         })
     };
+    #[cfg(not(target_os = "linux"))]
+    let _ = bluetooth; // the Bluetooth channel is a BlueZ L2CAP socket
+    #[cfg(target_os = "linux")]
     if bluetooth {
         crate::ble::start(serve.clone(), logs.clone());
     }

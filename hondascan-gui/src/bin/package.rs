@@ -19,6 +19,10 @@
 //! package build.
 //!
 //! Writes dist/hondascan-<version>-<os>-<arch>/ and a .tar.gz (.zip on Windows, made by the system `tar`, which is bsdtar there).
+//!
+//! `PACKAGE_TARGET=x86_64-pc-windows-gnu cargo run --release --bin package` builds the Windows archive from a Linux machine (mingw-w64
+//! as the linker, `zip` for the archive; the release container does this): the binaries come from `target/<triple>/release`, and the
+//! packaged `hondascan.exe selfcheck` runs under `wine` when that is installed, else it is reported as not run.
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -36,11 +40,12 @@ fn run(cmd: &mut Command) -> Res<()> {
 /// which the remap flags above cannot touch) compiles out instead of baking this machine's path into the binary.
 /// Applied to every release build whose output is copied into the dist folder, not to `build-db`/`encrypt-db`
 /// (dev-only, not shipped).
-fn release_rustflags(repo_root: &Path) -> Res<String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set")?;
+fn release_rustflags(repo_root: &Path, windows: bool) -> Res<String> {
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).map_err(|_| "HOME (USERPROFILE on Windows) not set")?;
+    // PE files have no build-id: the Microsoft linker has no such flag, and the one to mingw's ld is not worth testing
+    let build_id = if windows { "" } else { " -C link-arg=-Wl,--build-id=none" };
     Ok(format!(
-        "--remap-path-prefix={}=. --remap-path-prefix={home}/.cargo=/c --remap-path-prefix={home}/.rustup=/r \
-         -C link-arg=-Wl,--build-id=none --cfg hondascan_packaged",
+        "--remap-path-prefix={}=. --remap-path-prefix={home}/.cargo=/c --remap-path-prefix={home}/.rustup=/r{build_id} --cfg hondascan_packaged",
         repo_root.display()
     ))
 }
@@ -236,14 +241,17 @@ fn make_executable(_path: &Path) -> Res<()> {
 
 /// Run the packaged CLI's offline `selfcheck` against a fresh, empty data directory, so the check proves the executables
 /// and their bundled resources work on a machine that does not have the source tree.
-fn verify_packaged_cli(out: &Path) -> Res<()> {
-    let exe = if cfg!(windows) { "hondascan.exe" } else { "hondascan" };
+fn verify_packaged_cli(out: &Path, windows: bool, cross: bool) -> Res<()> {
+    let exe = if windows { "hondascan.exe" } else { "hondascan" };
     let cli = out.join(exe);
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
     let home = std::env::temp_dir().join(format!("hondascan-package-check-{}-{stamp}", std::process::id()));
     std::fs::create_dir_all(&home)?;
 
-    let mut cmd = Command::new(&cli);
+    let mut cmd = if cross { Command::new("wine") } else { Command::new(&cli) };
+    if cross {
+        cmd.arg(&cli);
+    }
     cmd.arg("selfcheck").env("HONDASCAN_HOME", &home).current_dir(&home);
     // No other HONDASCAN_* override: the check is about what the package carries. HONDASCAN_DB is the one fallback the
     // task allows, for a layout where the database is not beside the CLI.
@@ -277,33 +285,40 @@ fn main() -> Res<()> {
     let krate = here.join("../hondascan");
     let db = krate.join("data/hondascan.db");
     let db_enc = db.with_extension("db.enc");
-    let exe = if cfg!(windows) { ".exe" } else { "" };
+    // PACKAGE_TARGET: a target triple to cross-build for (the Windows archive is made on Linux)
+    let target = std::env::var("PACKAGE_TARGET").ok().filter(|t| !t.is_empty());
+    let windows = target.as_deref().map_or(cfg!(windows), |t| t.contains("windows"));
+    let cross = target.is_some();
+    let exe = if windows { ".exe" } else { "" };
+    let release_dir = target.as_deref().map_or("target/release".to_string(), |t| format!("target/{t}/release"));
+    let target_args: Vec<&str> = target.as_deref().map_or(vec![], |t| vec!["--target", t]);
     if !db.exists() {                                            // generated, never tracked
         run(Command::new("cargo").args(["run", "--release", "--bin", "build-db"]).current_dir(&krate))?;
     }
     let repo_root = here.parent().unwrap_or(here);
-    let rustflags = release_rustflags(repo_root)?;
-    run(Command::new("cargo").args(["build", "--release"]).current_dir(here).env("RUSTFLAGS", &rustflags))?;
-    run(Command::new("cargo").args(["build", "--release", "--bins"]).current_dir(&krate).env("RUSTFLAGS", &rustflags))?;
+    let rustflags = release_rustflags(repo_root, windows)?;
+    run(Command::new("cargo").args(["build", "--release"]).args(&target_args).current_dir(here).env("RUSTFLAGS", &rustflags))?;
+    run(Command::new("cargo").args(["build", "--release", "--bins"]).args(&target_args).current_dir(&krate).env("RUSTFLAGS", &rustflags))?;
     // Ship the encrypted form, not the plain SQLite file: `hondascan.db` is readable with `sqlite3` as-is, and it
     // carries the decoded HDS tables, which is the data this package exists to not hand out for free. `db.rs`
     // decrypts it in memory on open (`dbcrypt`); re-encrypt every time, so a stale `.enc` from an older `hondascan.db`
     // never ships silently.
     run(Command::new("cargo").args(["run", "--release", "--bin", "encrypt-db"]).current_dir(&krate))?;
 
-    let target_os = std::env::consts::OS;
+    let target_os = if cross { if windows { "windows" } else { "linux" } } else { std::env::consts::OS };
+    let arch = target.as_deref().and_then(|t| t.split('-').next()).unwrap_or(std::env::consts::ARCH);
     let os = if target_os == "macos" { "darwin" } else { target_os };   // the folder name, as before
     let version = env!("CARGO_PKG_VERSION");
-    let name = format!("hondascan-{version}-{os}-{}", std::env::consts::ARCH);
+    let name = format!("hondascan-{version}-{os}-{arch}");
     let dist = here.join("dist");
     let out = dist.join(&name);
     let _ = std::fs::remove_dir_all(&out);
     std::fs::create_dir_all(out.join("data"))?;
     std::fs::create_dir_all(out.join("drivers"))?;
     let binaries = [format!("hondascan-gui{exe}"), format!("hondascan-rpc{exe}"), format!("hondascan{exe}")];
-    std::fs::copy(here.join(format!("target/release/hondascan-gui{exe}")), out.join(&binaries[0]))?;
+    std::fs::copy(here.join(format!("{release_dir}/hondascan-gui{exe}")), out.join(&binaries[0]))?;
     for b in ["hondascan-rpc", "hondascan"] {
-        std::fs::copy(krate.join(format!("target/release/{b}{exe}")), out.join(format!("{b}{exe}")))?;
+        std::fs::copy(krate.join(format!("{release_dir}/{b}{exe}")), out.join(format!("{b}{exe}")))?;
     }
     std::fs::copy(&db_enc, out.join("data/hondascan.db.enc"))?;
     if krate.join("profiles").is_dir() {
@@ -317,26 +332,38 @@ fn main() -> Res<()> {
         return Err(format!("assets/PACKAGE-README.md mentions {word:?}, which must not ship").into());
     }
     std::fs::write(out.join("README.md"), readme)?;
-    std::fs::copy(here.join("assets/fonts/OFL-Geist.txt"), out.join("OFL-Geist.txt"))?;
+    std::fs::copy(here.join("assets/fonts/OFL-Noto.txt"), out.join("OFL-Noto.txt"))?;
     let rules = krate.join("packaging/60-hondascan.rules");
-    if cfg!(target_os = "linux") && rules.exists() {
+    if target_os == "linux" && rules.exists() {
         std::fs::copy(rules, out.join("60-hondascan.rules"))?;
     }
-    for b in &binaries {
-        make_executable(&out.join(b))?;
+    if !windows {
+        for b in &binaries {
+            make_executable(&out.join(b))?;
+        }
     }
 
-    write_metadata(&out, version, target_os, std::env::consts::ARCH, unix_seconds())?;
+    write_metadata(&out, version, target_os, arch, unix_seconds())?;
 
-    let archive = dist.join(format!("{name}{}", if cfg!(windows) { ".zip" } else { ".tar.gz" }));
-    let flags = if cfg!(windows) { "-acf" } else { "-czf" };
-    run(Command::new("tar").arg(flags).arg(&archive).arg("-C").arg(&dist).arg(&name))?;
+    let archive = dist.join(format!("{name}{}", if windows { ".zip" } else { ".tar.gz" }));
+    if windows && !cfg!(windows) {
+        let _ = std::fs::remove_file(&archive);
+        run(Command::new("zip").arg("-qr").arg(&archive).arg(&name).current_dir(&dist))?;   // GNU tar cannot write a zip
+    } else {
+        let flags = if windows { "-acf" } else { "-czf" };
+        run(Command::new("tar").arg(flags).arg(&archive).arg("-C").arg(&dist).arg(&name))?;
+    }
     let archive_name = archive.file_name().ok_or("archive path has no file name")?.to_string_lossy().into_owned();
     let archive_sum = sha256_hex(&std::fs::read(&archive)?);
     let sum_path: PathBuf = dist.join(format!("{archive_name}.sha256"));
     std::fs::write(&sum_path, format!("{archive_sum}  {archive_name}\n"))?;
 
-    verify_packaged_cli(&out)?;
+    let wine = Command::new("wine").arg("--version").output().is_ok_and(|o| o.status.success());
+    if cross && !wine {
+        println!("the packaged selfcheck was not run: {} is not a native executable and wine is not installed", out.display());
+    } else {
+        verify_packaged_cli(&out, windows, cross)?;
+    }
 
     println!("{}", out.display());
     println!("{} ({:.1} MB)", archive.display(), std::fs::metadata(&archive)?.len() as f64 / 1e6);

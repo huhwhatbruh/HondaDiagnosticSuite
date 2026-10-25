@@ -154,7 +154,8 @@ fn backend_binary() -> Option<PathBuf> {
     dirs.into_iter().map(|d| d.join(name)).find(|p| p.is_file())
 }
 
-#[cfg(test)]
+// the stand-in backend is a sh script and the test sets a Unix file mode
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -182,7 +183,6 @@ done
 
     fn get(rx: &Receiver<Reply>) -> Reply { rx.recv_timeout(Duration::from_secs(10)).expect("a reply") }
 
-    #[cfg(unix)]
     #[test]
     fn replies_are_matched_by_id_and_a_dead_backend_fails_its_calls() {
         let dir = std::env::temp_dir().join(format!("hondascan-gui-fake-{}", std::process::id()));

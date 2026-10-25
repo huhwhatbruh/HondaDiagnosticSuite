@@ -83,7 +83,7 @@ pub fn show(ui: &mut Ui, ecu: &crate::api::Ecu, writes: &[&WriteFn], vin: Option
         .size(13.0).color(MUTED_FG));
     ui.add_space(8.0);
     for w in writes {
-        card().show(ui, |ui| {
+        card(ui, egui::Margin::ZERO, |ui| {
             ui.set_width(ui.available_width());
             Frame::NONE.inner_margin(Margin::same(16)).show(ui, |ui| {
                 ui.set_width(ui.available_width());

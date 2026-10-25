@@ -7,7 +7,7 @@ use crate::format::display;
 use crate::names::friendly;
 use crate::theme::*;
 use crate::widgets::{button_x, window, Kind};
-use eframe::egui::{self, vec2, Align2, Color32, RichText, Stroke, Ui};
+use eframe::egui::{self, vec2, Align2, RichText, Stroke, Ui};
 use serde_json::{json, Value};
 use std::sync::mpsc::Receiver;
 
@@ -73,7 +73,7 @@ pub fn show(ui: &mut Ui, be: &Backend, ecu: &crate::api::Ecu, cat: Option<&Catal
                 let (t, u) = display(Some(v), &def.unit);
                 ui.painter().text(r.left_top() + vec2(12.0, 14.0), Align2::LEFT_CENTER, &n.name, sans(12.0), MUTED_FG);
                 crate::widgets::amount(ui.painter(), r.left_top() + vec2(12.0, 34.0), &t, bold(14.0), FOREGROUND, &u, sans(12.0));
-                ui.painter().rect_stroke(r, 0.0, Stroke::new(1.0, Color32::from_white_alpha(14)), egui::StrokeKind::Inside);
+                ui.painter().rect_stroke(r, 0.0, Stroke::new(1.0, BORDER), egui::StrokeKind::Inside);
             }
         }
         ui.add_space(6.0);

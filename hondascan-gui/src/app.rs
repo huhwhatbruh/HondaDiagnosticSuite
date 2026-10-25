@@ -174,8 +174,6 @@ pub struct App {
     pub choice: usize,
     pub custom: String,
     pub settings: Option<crate::settings::Store>,
-    pub voxels: Option<crate::ui::logo::Voxels>, // the logo in the header
-    pub turntable: Option<crate::ui::turntable::Turntable>, // the welcome screen's car; None once connected (its textures are freed)
     pub ecus: Vec<Ecu>,
     pub vin: Option<String>,
     pub scanning: bool,
@@ -192,7 +190,6 @@ pub struct App {
     status_at: Instant,
     pub toasts: Toasts,
     alert_bar: AlertBar,
-    told: Vec<String>,
     pub view: View,
     screen: (String, f64),   // which screen is showing and since when (`motion::entered`)
     pub map_sel: String,
@@ -222,14 +219,14 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>, logo: Option<image::RgbaImage>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         theme::install(&cc.egui_ctx);
         let (be, ev) = Backend::new(cc.egui_ctx.clone());
         let (catalog_tx, catalog_rx) = std::sync::mpsc::channel();
         let mut app = App {
-            jobs: Vec::new(), ev, link: Link::Idle, adapter: String::new(), adapters: crate::ui::topbar::adapter_list(&[]), choice: 0, custom: "j2534:/usr/lib/libj2534.so".into(), settings: None, voxels: None, turntable: None, ecus: Vec::new(), vin: None,
+            jobs: Vec::new(), ev, link: Link::Idle, adapter: String::new(), adapters: crate::ui::topbar::adapter_list(&[]), choice: 0, custom: "j2534:/usr/lib/libj2534.so".into(), settings: None, ecus: Vec::new(), vin: None,
             scanning: false, scan_seconds: None, dtcs: HashMap::new(), catalogs: HashMap::new(), catalog_rx, catalog_tx, status: None, act_tests: Vec::new(), act: None, writes: Vec::new(), last_write: None,
-            status_at: Instant::now(), toasts: Toasts::default(), alert_bar: AlertBar::default(), told: Vec::new(),
+            status_at: Instant::now(), toasts: Toasts::default(), alert_bar: AlertBar::default(),
             view: View::Overview, screen: (String::new(), 0.0), map_sel: "IG".into(), sysui: None, history: Default::default(), maintenance: None, maintenance_err: None,
             self_check: None, self_check_err: None, backend_version: String::new(), settings_writable: false,
             freeze: None, marker: None,
@@ -238,7 +235,6 @@ impl App {
             shot: std::env::var("HONDASCAN_SCREENSHOT").ok().map(|path| debug::Shot {
                 path, sent: false, after: std::env::var("HONDASCAN_SCREENSHOT_AFTER").ok().and_then(|v| v.parse().ok()).unwrap_or(8.0) }),
         };
-        app.voxels = logo.map(|i| crate::ui::logo::Voxels::build(&i, 40, 33, 3));
         app.job(Job::Hello, "hello", json!({}));
         app.job(Job::Ports, "ports", json!({}));
         app
@@ -437,13 +433,14 @@ impl App {
 }
 
 impl eframe::App for App {
-    fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] { theme::BACKGROUND.to_normalized_gamma_f32() }
+    // transparent: the window is a rounded rectangle (ui/frame.rs) and the desktop shows in its corners
+    fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] { [0.0; 4] }
 
-    /// Everything that is not drawing: backend replies, polling, announcements.
+    /// Everything that is not drawing: backend replies, polling.
     fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.pump(ctx);
-        self.announce(ctx);
         self.shoot(ctx);
+        crate::widgets::track_input(ctx);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -460,7 +457,10 @@ impl App {
         let ctx = ui.ctx().clone();
         let alerts = self.status.as_ref().map(|s| s.alerts.clone()).unwrap_or_default();
 
-        egui::Panel::top("top").exact_size(48.0).frame(Frame::NONE.fill(theme::PANEL)).show(ui, |ui| topbar::show(ui, self));
+        use crate::ui::frame::{backdrop, corners, rim};
+        backdrop(&ctx);
+        egui::Panel::top("top").exact_size(48.0).frame(Frame::NONE.fill(theme::PANEL).corner_radius(corners(&ctx, true, true, false, false)))
+            .show(ui, |ui| topbar::show(ui, self));
         egui::Panel::top("alerts").size_range(0.0..=f32::INFINITY).frame(Frame::NONE).show_separator_line(false).show(ui, |ui| {
             let mut b = std::mem::take(&mut self.alert_bar);
             b.show(ui, &alerts);
@@ -472,16 +472,16 @@ impl App {
         egui::Panel::top("wrun").size_range(0.0..=f32::INFINITY).frame(Frame::NONE).show_separator_line(false).show(ui, |ui| {
             if crate::ui::write::running_bar(ui, self.write_running().as_deref()) { self.write_cancel(); }
         });
-        egui::Panel::left("side").exact_size(240.0).resizable(false).frame(Frame::NONE.fill(theme::PANEL).inner_margin(Margin::same(8)))
+        egui::Panel::left("side").exact_size(240.0).resizable(false)
+            .frame(Frame::NONE.fill(theme::PANEL).corner_radius(corners(&ctx, false, false, true, false)).inner_margin(Margin::same(8)))
             .show(ui, |ui| sidebar::show(ui, self));
-        egui::CentralPanel::default_margins().frame(Frame::NONE.fill(theme::BACKGROUND).inner_margin(Margin::same(16))).show(ui, |ui| {
+        egui::CentralPanel::default_margins()
+            .frame(Frame::NONE.fill(theme::BACKGROUND).corner_radius(corners(&ctx, false, false, false, true)).inner_margin(Margin::same(16))).show(ui, |ui| {
             // a screen of its own (and a tab of its own) keeps its own scroll position and fades in when it is switched to
-            let key = match (&self.view, &self.sysui) {
-                (View::Overview, _) => "overview".to_string(),
-                (View::History, _) => "history".to_string(),
-                (View::System(k), s) => format!("{k}/{}", s.as_ref().map_or(0, |s| s.tab as u8)),
-            };
-            if self.screen.0 != key { self.screen = (key.clone(), if self.screen.0.is_empty() { f64::NEG_INFINITY } else { ctx.input(|i| i.time) }); }
+            // only a different screen fades in; a tab of the same system swaps in place (but keeps its own scroll position)
+            let screen = match &self.view { View::Overview => "overview".to_string(), View::History => "history".to_string(), View::System(k) => k.to_string() };
+            let key = match (&self.view, &self.sysui) { (View::System(_), Some(s)) => format!("{screen}/{}", s.tab as u8), _ => screen.clone() };
+            if self.screen.0 != screen { self.screen = (screen, if self.screen.0.is_empty() { f64::NEG_INFINITY } else { ctx.input(|i| i.time) }); }
             let t = crate::motion::entered(&ctx, self.screen.1);
             let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]).id_salt(&key);
             if let Some(y) = std::env::var("HONDASCAN_SCROLL").ok().and_then(|v| v.parse::<f32>().ok()) { sa = sa.vertical_scroll_offset(y); } // screenshots below the fold
@@ -495,9 +495,8 @@ impl App {
         let mut t = std::mem::take(&mut self.toasts);
         t.show(&ctx);
         self.toasts = t;
-        // the logo turns at 30 frames a second. egui subtracts one predicted frame (16 ms) from the delay it is given, so 33 ms
-        // became 60 frames a second: asking for 50 ms is what makes 30
-        ctx.request_repaint_after(Duration::from_millis(if self.voxels.is_some() { 50 } else { 100 }));
+        rim(&ctx);
+        ctx.request_repaint_after(Duration::from_millis(100));
     }
 }
 

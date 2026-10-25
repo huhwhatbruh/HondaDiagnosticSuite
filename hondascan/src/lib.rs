@@ -4,7 +4,9 @@ pub mod actuatorrun;
 pub mod alerts;
 pub mod audit;
 pub mod backup;
+#[cfg(target_os = "linux")]
 pub mod ble;
+#[cfg(unix)]
 pub mod bonjour;
 pub mod big;
 pub mod cli;
@@ -19,6 +21,7 @@ pub mod ident;
 pub mod journal;
 pub mod kwp;
 pub mod livedata;
+pub mod localtime;
 pub mod maintenance;
 pub mod mapbaseline;
 pub mod maps;

@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn marks_are_icons_from_the_icon_font_not_text_glyphs() {
-        // the bundled Geist fonts have no ✓ (U+2713); Phosphor's glyphs live in the private-use area the icon font covers
+        // the bundled Noto fonts have no ✓ (U+2713); Phosphor's glyphs live in the private-use area the icon font covers
         for s in ["ok", "warn", "fail"] {
             let c = mark(s).0.chars().next().unwrap() as u32;
             assert!((0xE000..=0xF8FF).contains(&c), "{s}: U+{c:04X} is not a Phosphor private-use glyph");

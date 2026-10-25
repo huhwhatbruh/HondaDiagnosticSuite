@@ -1,4 +1,3 @@
-pub mod logo;
 pub mod frame;
 pub mod history;
 pub mod dtc_panel;

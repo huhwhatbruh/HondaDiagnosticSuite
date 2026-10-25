@@ -12,7 +12,7 @@ fn stat(ui: &mut Ui, r: egui::Rect, label: &str, text: &str, unit: &str, color: 
     let p = ui.painter();
     p.text(r.left_top() + vec2(16.0, 20.0), Align2::LEFT_CENTER, label, sans(12.0), MUTED_FG);
     crate::widgets::amount(p, r.left_top() + vec2(16.0, 46.0), text, bold(21.0), color, unit, sans(12.0));
-    let line = Stroke::new(1.0, Color32::from_white_alpha(18));
+    let line = Stroke::new(1.0, BORDER);
     p.line_segment([r.right_top(), r.right_bottom()], line);
     p.line_segment([r.left_bottom(), r.right_bottom()], line);
 }

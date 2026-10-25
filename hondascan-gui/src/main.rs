@@ -21,9 +21,8 @@ fn size() -> [f32; 2] {
 }
 
 fn main() -> eframe::Result<()> {
-    // the logo, decoded once: the window icon here, the spinning model in the app
-    let logo = image::load_from_memory(include_bytes!("../assets/icon.png")).ok().map(|i| i.to_rgba8());
     // the window icon: the logo scaled to fit a square, its transparent background kept
+    let logo = image::load_from_memory(include_bytes!("../assets/icon.png")).ok().map(|i| i.to_rgba8());
     let icon = logo.as_ref().map(|i| {
         let i = image::imageops::resize(i, 256, (256.0 * i.height() as f32 / i.width() as f32) as u32, image::imageops::FilterType::Lanczos3);
         let mut sq = image::RgbaImage::new(256, 256);
@@ -31,8 +30,8 @@ fn main() -> eframe::Result<()> {
         egui::IconData { width: 256, height: 256, rgba: sq.into_raw() }
     });
     let mut vp = egui::ViewportBuilder::default()
-        .with_title("hondascan").with_decorations(false)
+        .with_title("hondascan").with_decorations(false).with_transparent(true)
         .with_inner_size(size()).with_min_inner_size([1024.0, 680.0]);
     if let Some(i) = icon { vp = vp.with_icon(i); }
-    eframe::run_native("hondascan", eframe::NativeOptions { viewport: vp, multisampling: std::env::var("HONDASCAN_MSAA").ok().and_then(|v| v.parse().ok()).unwrap_or(4), ..Default::default() }, Box::new(move |cc| Ok(Box::new(app::App::new(cc, logo)))))
+    eframe::run_native("hondascan", eframe::NativeOptions { viewport: vp, multisampling: std::env::var("HONDASCAN_MSAA").ok().and_then(|v| v.parse().ok()).unwrap_or(4), ..Default::default() }, Box::new(move |cc| Ok(Box::new(app::App::new(cc)))))
 }
