@@ -7,7 +7,7 @@ HDS is the software Honda dealers use. It only runs on Windows. This does the re
 > **Proven on a 2015 Accord (K24W1, CVT) so far.** I need people with other Hondas:
 > **[open a vehicle report](../../issues/new?template=vehicle_report.md)**
 
-[Download v0.2.0](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.2.0) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
+[Download v0.2.1](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.2.1) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
 
 
 A generic OBD-II reader talks to the emissions computer and knows a few standard codes. A modern Honda carries a dozen or more
@@ -59,13 +59,13 @@ The desktop app `hondascan-gui` wraps the same scanner. Download, udev rule, ada
 
 ## Download and requirements
 
-Two archives are attached to [each release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.2.0), with a
+Two archives are attached to [each release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.2.1), with a
 `.sha256` file.
 
 | Archive | Runs on |
 |---|---|
-| `hondascan-0.2.0-linux-x86_64.tar.gz` | Built on Ubuntu 22.04 (glibc 2.35). Any Linux x86_64 with glibc 2.35 or newer (`ldd --version`). Tested on Ubuntu 22.04 and Arch (CachyOS); Debian 12+ and Fedora should run it but are not tested |
-| `hondascan-0.2.0-windows-x86_64.zip` | 64-bit Windows 10 or 11. Built with mingw-w64 and run under Wine, but **not yet run on a real Windows machine or a car**: reports are the most useful thing you can send |
+| `hondascan-0.2.1-linux-x86_64.tar.gz` | Built on Ubuntu 22.04 (glibc 2.35). Any Linux x86_64 with glibc 2.35 or newer (`ldd --version`). Tested on Ubuntu 22.04 and Arch (CachyOS); Debian 12+ and Fedora should run it but are not tested |
+| `hondascan-0.2.1-windows-x86_64.zip` | 64-bit Windows 10 or 11. Built with mingw-w64 and run under Wine, but **not yet run on a real Windows machine or a car**: reports are the most useful thing you can send |
 
 Nothing to install for the app itself: no Python, no Rust, no Wine. The machine needs:
 
@@ -80,7 +80,9 @@ On **Windows** the archive is the same three programs as `.exe` files (`hondasca
 with nothing to install for them. Serial and ELM327 adapters (USB, or Bluetooth once paired) work through their COM port:
 `hondascan.exe -a elm:COM5 scan`; the app lists the ports it finds. J2534 devices, the GD101 among them, use the maker's driver
 package, which registers a J2534 DLL: `-a gd101-j2534` or `-a j2534:NAME` finds it. This build is 64-bit and loads only 64-bit
-DLLs, and many J2534 DLLs are 32-bit. SocketCAN and the phone gateway's Bluetooth and Bonjour parts are Linux only.
+DLLs, and many J2534 DLLs are 32-bit. SocketCAN and the phone gateway's Bluetooth and Bonjour parts are Linux only. The `.exe` files are not code-signed, so Windows SmartScreen
+may warn the first time: choose **More info**, then **Run anyway**. 0.2.0 drew light-grey edges and a white search box when Windows was in
+light mode; 0.2.1 fixes that, so use 0.2.1 or newer.
 
 ## Build from source
 

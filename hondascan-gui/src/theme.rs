@@ -87,7 +87,7 @@ pub fn install(ctx: &egui::Context) {
     if let Some(bold) = f.families.get_mut(&FontFamily::Name("bold".into())) { bold.push("phosphor".into()); }
     ctx.set_fonts(f);
 
-    let mut s = (*ctx.global_style()).clone();
+    let mut s = (*ctx.style_of(egui::Theme::Dark)).clone();
     s.text_styles = BTreeMap::from([
         (TextStyle::Small, sans(11.0)), (TextStyle::Body, sans(13.0)), (TextStyle::Button, sans(13.0)),
         (TextStyle::Heading, bold(18.0)), (TextStyle::Monospace, mono(12.5)),
@@ -128,7 +128,11 @@ pub fn install(ctx: &egui::Context) {
         v.widgets.hovered.bg_stroke = Stroke::new(1.0, OUTLINE);
         v
     };
-    ctx.set_global_style(s);
+    // The app is dark only. egui styles one slot per theme and follows the system's: with Windows (or Wine) in light mode the
+    // stock light style took over, and every panel edge, text field and chart line drew in light-theme grey and white.
+    ctx.set_theme(egui::ThemePreference::Dark);
+    ctx.set_style_of(egui::Theme::Dark, s.clone());
+    ctx.set_style_of(egui::Theme::Light, s);
 }
 
 #[cfg(test)]
@@ -176,6 +180,18 @@ mod tests {
             assert!(r >= 1.2, "BORDER on {sn} is {r:.2}:1, below 1.2:1");
         }
         assert!(lum(BORDER) < lum(OUTLINE));
+    }
+
+    /// Windows and Wine report a light system theme; the app's style must still be the one in use (separator lines drew in egui's
+    /// light grey, 190, and text fields in white, before the style was set for both themes).
+    #[test]
+    fn the_app_style_is_in_use_when_the_system_theme_is_light() {
+        let ctx = egui::Context::default();
+        install(&ctx);
+        let input = egui::RawInput { system_theme: Some(egui::Theme::Light), ..Default::default() };
+        let _ = ctx.run_ui(input, |_| {});
+        assert_eq!(ctx.global_style().visuals.widgets.noninteractive.bg_stroke.color, BORDER);
+        assert_eq!(ctx.global_style().visuals.panel_fill, BACKGROUND);
     }
 
     /// The wheel scrolls a tall area under the installed style (no scroll bars are drawn, and none must take the wheel with them).
