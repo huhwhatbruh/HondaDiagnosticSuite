@@ -76,12 +76,12 @@ impl App {
                 self.vin = (s.vin != "UNKNOWN" && !s.vin.is_empty()).then(|| s.vin.clone());
                 self.scan_seconds = Some(s.seconds);
                 self.ecus = s.ecus;
+                self.read_codes.sync(&self.ecus);
                 let keys: Vec<String> = self.ecus.iter().map(Ecu::key).collect();
                 self.dtcs.retain(|k, _| keys.contains(k)); // a rescan that no longer finds a system drops its codes
                 let n = self.ecus.len();
                 self.toasts.push(ctx, "scan", Level::Success, &format!("{n} system{} found", if n == 1 { "" } else { "s" }),
                     &format!("Recording session {}", s.session), 5.0);
-                for e in self.ecus.clone() { self.read_dtcs(&e); }
                 for def in &glance::DEFS {
                     if let Some(e) = self.ecus.iter().find(|e| def.types.contains(&e.system_type.as_str()) && !e.system.is_empty()).cloned() {
                         if !self.catalogs.contains_key(&e.system) { self.job(Job::Catalog(e.system.clone()), "catalog", json!({ "system": e.system })); }
@@ -328,9 +328,9 @@ impl App {
             "session" if data["state"] == "started" => {
                 self.dtcs.clear();
                 if let Ok(s) = crate::api::parse::<ScanResult>(data) { self.ecus = s.ecus; }
+                self.read_codes.sync(&self.ecus);
                 self.reset_live();
                 self.start_live();
-                for e in self.ecus.clone() { self.read_dtcs(&e); }
             }
             _ => {}
         }

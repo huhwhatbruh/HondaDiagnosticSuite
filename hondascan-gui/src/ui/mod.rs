@@ -20,6 +20,7 @@ pub mod car;
 pub mod carmodel;
 pub mod turntable;
 pub mod codes;
+pub mod read_codes;
 pub mod alerts;
 pub mod hero;
 pub mod overview;

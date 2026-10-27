@@ -43,6 +43,25 @@ impl DtcState {
     }
 }
 
+/// Which systems the person ticked in the Read codes dialog (ui/read_codes.rs): codes are read when asked, never by
+/// themselves after a scan or when the car wakes into a new session. The ticks are kept for the session (a system found
+/// for the first time starts ticked) and cleared when the car is forgotten.
+#[derive(Default)]
+pub struct ReadCodes { pub open: bool, pub checked: HashMap<String, bool> }
+
+impl ReadCodes {
+    /// Keep the ticks of the systems still found and tick a system found for the first time.
+    pub fn sync(&mut self, ecus: &[Ecu]) {
+        self.checked.retain(|k, _| ecus.iter().any(|e| e.key() == *k));
+        for e in ecus { self.checked.entry(e.key()).or_insert(true); }
+    }
+    pub fn reset(&mut self) { self.open = false; self.checked.clear(); }
+    pub fn is_checked(&self, e: &Ecu) -> bool { self.checked.get(&e.key()).copied().unwrap_or(false) }
+    pub fn set_all(&mut self, ecus: &[Ecu], on: bool) { for e in ecus { self.checked.insert(e.key(), on); } }
+    pub fn chosen<'a>(&self, ecus: &'a [Ecu]) -> Vec<&'a Ecu> { ecus.iter().filter(|e| self.is_checked(e)).collect() }
+    pub fn any(&self, ecus: &[Ecu]) -> bool { ecus.iter().any(|e| self.is_checked(e)) }
+}
+
 /// Systems whose codes are not known (read failed, or not read yet and not being read): never shown as "no codes".
 pub fn unread<'a>(ecus: &'a [Ecu], dtcs: &HashMap<String, DtcState>) -> Vec<&'a Ecu> {
     ecus.iter().filter(|e| dtcs.get(&e.key()).is_none_or(|d| !d.loading && d.dtcs.is_none())).collect()
@@ -179,6 +198,8 @@ pub struct App {
     pub scanning: bool,
     pub scan_seconds: Option<f64>,
     pub dtcs: HashMap<String, DtcState>,
+    /// The systems ticked to read after a scan (the Read codes dialog): nothing is read until the person asks.
+    pub read_codes: ReadCodes,
     catalog_rx: std::sync::mpsc::Receiver<(String, Catalog)>,   // catalogs converted off the UI thread (6-9 ms for the engine's)
     catalog_tx: std::sync::mpsc::Sender<(String, Catalog)>,
     pub catalogs: HashMap<String, std::sync::Arc<Catalog>>,   // shared: a system view takes a handle each frame, not a copy of 700 signals
@@ -225,7 +246,7 @@ impl App {
         let (catalog_tx, catalog_rx) = std::sync::mpsc::channel();
         let mut app = App {
             jobs: Vec::new(), ev, link: Link::Idle, adapter: String::new(), adapters: crate::ui::topbar::adapter_list(&[]), choice: 0, custom: "j2534:/usr/lib/libj2534.so".into(), settings: None, ecus: Vec::new(), vin: None,
-            scanning: false, scan_seconds: None, dtcs: HashMap::new(), catalogs: HashMap::new(), catalog_rx, catalog_tx, status: None, act_tests: Vec::new(), act: None, writes: Vec::new(), last_write: None,
+            scanning: false, scan_seconds: None, dtcs: HashMap::new(), read_codes: ReadCodes::default(), catalogs: HashMap::new(), catalog_rx, catalog_tx, status: None, act_tests: Vec::new(), act: None, writes: Vec::new(), last_write: None,
             status_at: Instant::now(), toasts: Toasts::default(), alert_bar: AlertBar::default(),
             view: View::Overview, screen: (String::new(), 0.0), map_sel: "IG".into(), sysui: None, history: Default::default(), maintenance: None, maintenance_err: None,
             self_check: None, self_check_err: None, backend_version: String::new(), settings_writable: false,
@@ -291,6 +312,7 @@ impl App {
     fn forget(&mut self) {
         self.ecus.clear();
         self.dtcs.clear();
+        self.read_codes.reset();
         self.act_tests.clear();
         self.act = None;
         self.writes.clear();
@@ -397,6 +419,14 @@ impl App {
         self.job(Job::Dtcs(e.key()), "dtcs", json!({ "address": e.address, "system": e.system }));
     }
 
+    /// Read the systems ticked in the Read codes dialog: the dialog's own action, so nothing is read without it.
+    pub fn read_selected_codes(&mut self) {
+        let chosen: Vec<Ecu> = self.read_codes.chosen(&self.ecus).into_iter().cloned().collect();
+        if chosen.is_empty() { return; }
+        self.read_codes.open = false;
+        for e in chosen { self.read_dtcs(&e); }
+    }
+
     pub fn health(&self, e: &Ecu) -> Health {
         match self.dtcs.get(&e.key()).and_then(|d| d.dtcs.as_ref()) {
             None => Health::Unknown,
@@ -491,6 +521,8 @@ impl App {
                 View::History => crate::ui::history::show(ui, self),
             } });
         });
+        // the Read codes dialog lives here, not in the Overview card: it stays put wherever the screen is scrolled
+        if self.read_codes.open { crate::ui::read_codes::show(&ctx, self); }
         crate::ui::frame::resize_edges(&ctx);
         let mut t = std::mem::take(&mut self.toasts);
         t.show(&ctx);
@@ -644,5 +676,40 @@ mod tests {
         assert!(d.attention(), "a readiness change is reported as needing attention");
         let d = baseline_diff(&ready, &HashMap::from([(ecus[0].key(), state(vec![], vec![dtc("P1000", "")]))]));
         assert!(d.readiness_changes.is_empty(), "the same set is no change");
+    }
+
+    #[test]
+    fn read_codes_ticks_new_systems_and_keeps_the_choice_across_a_rescan() {
+        let (engine, srs) = (ecu(0x0E, "CANFI", "PGM-FI"), ecu(0x53, "CANSRS", "SRS"));
+        let mut r = ReadCodes::default();
+        r.sync(&[engine.clone(), srs.clone()]);
+        assert!(r.is_checked(&engine) && r.is_checked(&srs), "a system found for the first time starts ticked");
+        // the person unticks the engine; a rescan keeps that choice and ticks the system it finds for the first time
+        r.checked.insert(engine.key(), false);
+        let meter = ecu(0x60, "CAN_METER", "METER");
+        r.sync(&[engine.clone(), srs.clone(), meter.clone()]);
+        assert!(!r.is_checked(&engine), "an unticked system stays unticked across a rescan");
+        assert!(r.is_checked(&meter), "a newly found system starts ticked");
+        let chosen: Vec<String> = r.chosen(&[engine.clone(), srs.clone(), meter.clone()]).iter().map(|e| e.key()).collect();
+        assert_eq!(chosen, [srs.key(), meter.key()]);
+        assert!(r.any(&[engine.clone(), srs.clone()]));
+        // a system the rescan no longer finds is dropped from the ticks
+        r.sync(std::slice::from_ref(&srs));
+        assert_eq!(r.checked.len(), 1);
+        assert!(r.checked.contains_key(&srs.key()));
+    }
+
+    #[test]
+    fn read_codes_set_all_and_reset() {
+        let (engine, srs) = (ecu(0x0E, "CANFI", "PGM-FI"), ecu(0x53, "CANSRS", "SRS"));
+        let mut r = ReadCodes { open: true, ..Default::default() };
+        r.sync(&[engine.clone(), srs.clone()]);
+        r.set_all(&[engine.clone(), srs.clone()], false);
+        assert!(!r.any(&[engine.clone(), srs.clone()]) && r.chosen(&[engine.clone(), srs.clone()]).is_empty(), "nothing ticked, nothing to read");
+        r.set_all(&[engine.clone(), srs.clone()], true);
+        assert_eq!(r.chosen(&[engine.clone(), srs.clone()]).len(), 2);
+        r.reset();
+        assert!(!r.open && r.checked.is_empty(), "a disconnect or a new adapter forgets the choice");
+        assert!(r.chosen(&[engine, srs]).is_empty());
     }
 }
