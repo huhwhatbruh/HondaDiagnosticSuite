@@ -109,6 +109,8 @@ const SCHEMA: &str = "
     CREATE TABLE converter_coefficients(converter INTEGER, idx INTEGER, value REAL);
     CREATE TABLE converter_map(converter INTEGER, idx INTEGER, x REAL, y REAL);
     CREATE TABLE converter_states(converter INTEGER, idx INTEGER, low REAL, high REAL, text TEXT, led INTEGER);
+    -- Honda DIAG-H: the module address and bit of each trouble code (diagh_dtc.rs); all values fit a byte
+    CREATE TABLE diagh_dtc_map(system TEXT, honda_main INTEGER, honda_sub INTEGER, symbol TEXT, address INTEGER, mask INTEGER);
 ";
 
 const INDEXES: &str = "
@@ -119,6 +121,7 @@ const INDEXES: &str = "
     CREATE INDEX dtc_code ON dtc(sae, subcode);
     CREATE INDEX dtc_sys ON dtc(system);
     CREATE INDEX ecu_sys ON ecus(system);
+    CREATE INDEX ddm_sys ON diagh_dtc_map(system);
 ";
 
 fn signal_part(tx: &Transaction, r: &Row) -> Res<()> {
@@ -213,6 +216,15 @@ fn build(src: &Path, out: &Path) -> Res<()> {
     for r in rows(src, "kwp_signal_parts.csv")? {
         signal_part(&tx, &r)?;
     }
+    for r in rows(src, "diagh_dtc_map.csv")? {
+        let byte = |col: &str| -> Res<i64> {
+            let v = r.i(col)?;
+            if (0..=255).contains(&v) { Ok(v) } else { Err(format!("diagh_dtc_map.csv: {col} {v} does not fit a byte").into()) }
+        };
+        tx.execute("INSERT INTO diagh_dtc_map VALUES(?,?,?,?,?,?)", params![
+            r.s("system"), byte("honda_main")?, byte("honda_sub")?, r.s("symbol"), byte("address")?, byte("mask")?
+        ])?;
+    }
     for r in rows(src, "converters.csv")? {
         tx.execute("INSERT INTO converters VALUES(?,?,?,?)", params![r.i("row")?, r.i("equation_idx")?, r.s("formula"), r.i("out_unit")?])?;
     }
@@ -235,7 +247,7 @@ fn build(src: &Path, out: &Path) -> Res<()> {
     tx.commit()?;
 
     let mut counts = Vec::new();
-    for t in ["systems", "dtc", "help", "signal_help", "ecus", "can_signal_parts", "converters"] {
+    for t in ["systems", "dtc", "help", "signal_help", "ecus", "can_signal_parts", "converters", "diagh_dtc_map"] {
         let n: i64 = db.query_row(&format!("SELECT COUNT(*) FROM {t}"), [], |r| r.get(0))?;
         counts.push(format!("{t}: {n}"));
     }

@@ -14,6 +14,7 @@ pub mod cvtsim;
 pub mod db;
 pub mod dbcrypt;
 pub mod diagh;
+pub mod diagh_dtc;
 pub mod handback;
 pub mod history;
 pub mod honda;

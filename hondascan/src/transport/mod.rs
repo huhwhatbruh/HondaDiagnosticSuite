@@ -3,6 +3,7 @@
 //! functional request, collect the answers), plus `describe` and `close`. Port of hondascan/transport/__init__.py;
 //! `open_adapter` follows as the back ends are ported.
 pub mod can;
+pub mod diagh_serial;
 pub mod elm327;
 pub mod elm_kline;
 pub mod elm_link;

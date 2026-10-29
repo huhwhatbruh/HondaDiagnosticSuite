@@ -11,10 +11,12 @@
  *   clang --target=i686-pc-windows-msvc -O1 -fno-builtin -mno-stack-arg-probe -fno-stack-protector -c gd101_pt_probe.c
  *   lld-link /subsystem:console /entry:mainCRTStartup /nodefaultlib gd101_pt_probe.obj kernel32.lib msvcrt.lib
  *
- * Usage under Wine: gd101_pt_probe.exe <path to GODIAG_PT32.dll> [ecu hex, default 0E] [pause seconds, default 0] [kline]
+ * Usage under Wine: gd101_pt_probe.exe <path to GODIAG_PT32.dll> [ecu hex, default 0E] [pause seconds, default 0] [kline|diagh]
  * With `kline` as the fourth argument it makes the K-line calls instead of the CAN ones (ISO 9141 and ISO 14230 at 10400 baud:
  * connect, SET_CONFIG, pass-all filter, 5-baud init, fast init, one write, a read, disconnect), for tracing GODIAG's driver
  * against tools/gd101_fake.py (no adapter or car needed: the fake logs what the DLL sends).
+ * With `diagh` it only asks the DLL to connect protocol ids 0x800B / 0x10003 (Honda DIAG-H) and two controls, printing the return codes
+ * (adapter attached, no car needed; nothing is written to the bus).
  * The pause comes after PassThruOpen and again at the end, with the DLL loaded: the window for a memory dump.
  */
 typedef unsigned long ULONG;
@@ -146,6 +148,30 @@ static void kline(ULONG dev, ULONG proto, ULONG flags, Connect_t Connect, Discon
     report("PassThruDisconnect", Disconnect(ch));
 }
 
+/* Does the adapter accept Honda's DIAG-H protocol id? HDS asks a generic J2534 device for 0x800B at 9600 baud with flags 0, and a
+ * GNA600 for 0x10003 with flags 0x200 (test.dll FUN_100156fb, README "K-line systems"); 0x800A (Bosch ABS, 10400) and ISO 9141 (id 3)
+ * are the controls: if those connect and 0x800B does not, the id is the problem. Connect and disconnect only; nothing is sent. */
+static void diagh(ULONG dev, Connect_t Connect, Disconnect_t Disconnect) {
+    static const struct { ULONG proto, flags, baud; const char *what; } t[] = {
+        {0x800B, 0, 9600, "DIAG-H 0x800B flags 0 (generic J2534 device)"},
+        {0x800B, 0x200, 9600, "DIAG-H 0x800B flags 0x200"},
+        {0x10003, 0x200, 9600, "DIAG-H 0x10003 flags 0x200 (GNA600)"},
+        {0x800A, 0, 10400, "control: 0x800A (Bosch ABS)"},
+        {3, 0, 10400, "control: ISO 9141"},
+    };
+    for (int i = 0; i < 5; i++) {
+        ULONG ch = 0;
+        printf("== %s\n", t[i].what);
+        if (!report("PassThruConnect", Connect(dev, t[i].proto, t[i].flags, t[i].baud, &ch)))
+            report("PassThruDisconnect", Disconnect(ch));
+    }
+}
+
+static int is(const char *a, const char *b) {
+    while (*a && *a == *b) a++, b++;
+    return *a == *b;
+}
+
 static int run(int argc, char **argv) {
     if (argc < 2) { printf("usage: gd101_pt_probe <GODIAG_PT32.dll> [ecu hex] [pause s]\n"); return 2; }
     ULONG ecu = argc > 2 ? strtoul(argv[2], 0, 16) : 0x0E, secs = argc > 3 ? strtoul(argv[3], 0, 10) : 0;
@@ -175,6 +201,11 @@ static int run(int argc, char **argv) {
         printf("encrypt %u key", t[0x2b0]);          /* receive key[0x3b1 + (i & 31)], send key[0x3d0 - (i & 31)] */
         for (int i = 0x3b1; i <= 0x3d0; i++) printf(" %02x", t[i]);
         printf("\n"); fflush(0);
+    }
+    if (argc > 4 && is(argv[4], "diagh")) {
+        diagh(dev, Connect, Disconnect);
+        report("PassThruClose", Close(dev));
+        return 0;
     }
     if (argc > 4) {
         kline(dev, 3, 0, Connect, Disconnect, StartMsgFilter, WriteMsgs, ReadMsgs, Ioctl);

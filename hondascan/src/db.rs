@@ -128,6 +128,20 @@ impl Database {
         out
     }
 
+    /// The bit of each trouble code of a Honda DIAG-H system (see `diagh_dtc`), in HDS's table order. Empty for a system without
+    /// one, and for a database built before the table existed.
+    pub fn diagh_dtc_map(&self, system: &str) -> Vec<crate::diagh_dtc::DtcBit> {
+        let has = self.query_one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='diagh_dtc_map'", [], |r| r.get::<_, i64>(0));
+        if has.is_none() {
+            return vec![];
+        }
+        self.query(
+            "SELECT honda_main, honda_sub, symbol, address, mask FROM diagh_dtc_map WHERE system=? ORDER BY rowid",
+            [system],
+            |r| Ok(crate::diagh_dtc::DtcBit { main: r.get(0)?, sub: r.get(1)?, symbol: r.get(2)?, address: r.get(3)?, mask: r.get(4)? }),
+        )
+    }
+
     /// HDS registry type name ('HONDA ABS') -> VCAN database system ('CANABS').
     pub fn vcan_system_for_type(&self, system_type: &str, hint: &str) -> Option<String> {
         if !hint.is_empty() && self.system(hint).is_some() {

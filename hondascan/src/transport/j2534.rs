@@ -8,8 +8,9 @@
 //! The library must export the J2534 C API. On Linux that is a shared library with the C calling convention; for the GODIAG GD101
 //! it is hondascan's own driver, gd101_j2534.c (C: it is a C API; `gd101_library()` builds it once with the system C compiler),
 //! and other devices with a Linux J2534 library work as `j2534:/path/to/lib.so`. On Windows it is the maker's J2534 DLL, named by
-//! path or by the name it registered under HKLM\SOFTWARE\PassThruSupport.04.04 (`registered_libraries()`); x86_64 has one calling
-//! convention, so stdcall and C are the same there. Most of those DLLs are 32-bit and load only into a 32-bit hondascan.
+//! path or by the name it registered under HKLM\SOFTWARE\PassThruSupport.04.04 (`registered_libraries()`). The function types are
+//! `extern "system"`: stdcall on 32-bit Windows, where the J2534 DLLs use it, and the plain C convention everywhere else (x86_64 has
+//! one, so stdcall and C are the same there). Most of those DLLs are 32-bit and load only into a 32-bit hondascan.
 use super::can::{now, BusCore, CanBus, CanFrame, CaptureLog, CAN_EFF_MASK};
 use std::ffi::{c_char, c_long, c_ulong, c_void};
 use std::io;
@@ -99,15 +100,15 @@ impl PassThruMsg {
     }
 }
 
-type Open = unsafe extern "C" fn(*const c_void, *mut c_ulong) -> c_long;
-type Close = unsafe extern "C" fn(c_ulong) -> c_long;
-type Connect = unsafe extern "C" fn(c_ulong, c_ulong, c_ulong, c_ulong, *mut c_ulong) -> c_long;
-type Rw = unsafe extern "C" fn(c_ulong, *mut PassThruMsg, *mut c_ulong, c_ulong) -> c_long;
-type StartFilter = unsafe extern "C" fn(c_ulong, c_ulong, *mut PassThruMsg, *mut PassThruMsg, *mut PassThruMsg, *mut c_ulong) -> c_long;
-type StopFilter = unsafe extern "C" fn(c_ulong, c_ulong) -> c_long;
-type Ioctl = unsafe extern "C" fn(c_ulong, c_ulong, *mut c_void, *mut c_void) -> c_long;
-type ReadVersion = unsafe extern "C" fn(c_ulong, *mut c_char, *mut c_char, *mut c_char) -> c_long;
-type LastError = unsafe extern "C" fn(*mut c_char) -> c_long;
+type Open = unsafe extern "system" fn(*const c_void, *mut c_ulong) -> c_long;
+type Close = unsafe extern "system" fn(c_ulong) -> c_long;
+type Connect = unsafe extern "system" fn(c_ulong, c_ulong, c_ulong, c_ulong, *mut c_ulong) -> c_long;
+type Rw = unsafe extern "system" fn(c_ulong, *mut PassThruMsg, *mut c_ulong, c_ulong) -> c_long;
+type StartFilter = unsafe extern "system" fn(c_ulong, c_ulong, *mut PassThruMsg, *mut PassThruMsg, *mut PassThruMsg, *mut c_ulong) -> c_long;
+type StopFilter = unsafe extern "system" fn(c_ulong, c_ulong) -> c_long;
+type Ioctl = unsafe extern "system" fn(c_ulong, c_ulong, *mut c_void, *mut c_void) -> c_long;
+type ReadVersion = unsafe extern "system" fn(c_ulong, *mut c_char, *mut c_char, *mut c_char) -> c_long;
+type LastError = unsafe extern "system" fn(*mut c_char) -> c_long;
 
 /// The PassThru functions of one library; every call returns J2534Error on a non-zero status.
 pub struct J2534Library {

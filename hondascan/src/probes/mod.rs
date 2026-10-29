@@ -2,6 +2,7 @@
 //! `abs_probe` (what makes the ABS/EPS/TPMS answer on the DLC) and `elm_addressing` (which header style an ELM clone accepts).
 //! Each has a thin binary in src/bin/.
 pub mod abs_probe;
+pub mod diagh_session;
 pub mod drive_series;
 pub mod elm_addressing;
 // the GD101 probes use termios2 and /proc/<pid>/mem of a Wine process: Linux only
