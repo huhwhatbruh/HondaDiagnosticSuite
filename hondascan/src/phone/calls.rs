@@ -13,9 +13,8 @@
 //!   clear            one system's codes (needs `confirm: true`; held, see `CLEAR_HELD`)
 //!
 //! The backend enforces what HDS enforces (the per-system whitelist, the VIN match, the conditions, the old value read first,
-//! the time limit; actservice.rs, writeservice.rs, service.rs) and `READ_ONLY_RELEASE` in the client. The gateway adds: the
-//! route is fixed, `confirm` must be the JSON boolean `true` in the body (a query string cannot carry it), a packaged
-//! release refuses the whole acting group at the door, a `reflash*` write key needs `HONDASCAN_PHONE_REFLASH=1` (none is in
+//! the time limit; actservice.rs, writeservice.rs, service.rs) in the client. The gateway adds: the
+//! route is fixed, `confirm` must be the JSON boolean `true` in the body (a query string cannot carry it), a `reflash*` write key needs `HONDASCAN_PHONE_REFLASH=1` (none is in
 //! the backend's whitelist today: `write::WRITES` has the learn and meter-maintenance functions), and a test started from the phone is stopped when the phone has been
 //! silent for `HANDBACK_AFTER` (the app polls every 0.25-0.5 s, so a dropped link, a closed app or a dead battery hands control
 //! back to the ECU instead of waiting for the test's own time limit).
@@ -229,10 +228,6 @@ pub fn call(relay: &Relay, path: &str, method: &str, query: &str, body: &[u8], s
     let route = ROUTES.iter().find(|r| r.path == path)?;
     if route.post != (method == "POST") {
         return Some(("405 Method Not Allowed", json!({"error": "not allowed"}).to_string()));
-    }
-    let acting = matches!(route.group, Group::Actuate | Group::Write | Group::Clear);
-    if acting && crate::READ_ONLY_RELEASE {
-        return Some(text("403 Forbidden", "this build is read-only"));
     }
     if route.group == Group::Clear && CLEAR_HELD && !sim_only {
         return Some(text("403 Forbidden", "clearing codes is on hold for a real car"));

@@ -203,9 +203,6 @@ impl UdsClient {
     fn check(&self, req: &[u8]) -> Result<(), UdsError> {
         let not = |s: String| Err(UdsError::NotAllowed(s));
         let sid = req[0];
-        if crate::READ_ONLY_RELEASE && matches!(sid, CLEAR_DTC | IO_CONTROL | ROUTINE_CONTROL | SECURITY_ACCESS) {
-            return not(format!("service 0x{sid:02X}: {}", crate::NOT_IN_RELEASE));
-        }
         let Some(subs) = allowed(sid) else { return not(format!("service 0x{sid:02X} is not in hondascan's allowlist")) };
         if let Some(subs) = subs {
             if req.len() < 2 || !subs.contains(&(req[1] & 0x7F)) {

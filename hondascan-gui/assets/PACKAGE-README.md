@@ -1,7 +1,7 @@
 # Honda Diagnostic Suite
 
-An open, native diagnostic tool for Honda vehicles, for Linux and Windows. Read-only in this release: scan, trouble codes, live data,
-recorded drives and history, health report.
+An open, native diagnostic tool for Honda vehicles, for Linux and Windows. Scan, trouble codes, live data,
+recorded drives and history, health report, clearing codes, actuator tests and writing functions (each behind a confirmation).
 
 Project page, wiki and issue tracker: https://github.com/huhwhatbruh/HondaDiagnosticSuite
 
@@ -15,7 +15,7 @@ Project page, wiki and issue tracker: https://github.com/huhwhatbruh/HondaDiagno
 | `lib/`, `qml/`, `plugins/`, `qt.conf` | The Qt the app is built on (Linux). Keep them next to the app |
 | `data/`, `drivers/` | What the program needs. Keep them next to the executables |
 | `60-hondascan.rules` | Linux only: udev rule for USB adapters (below) |
-| `SHA256SUMS`, `manifest.json`, `VERSION` | Checksums and version of every file here |
+| `manifest.json`, `VERSION` | The version and the list of files here |
 | `OFL-Noto.txt` | Licence of the app's font (the fonts are inside the app) |
 
 ## Set-up
@@ -44,7 +44,7 @@ Nothing else needs installing for the program itself: no Python, no Rust, no Win
   `-a j2534:C:\path\to\device.dll`. This build is 64-bit and loads only 64-bit DLLs; many J2534 DLLs are 32-bit and
   will say so when loading.
 - **Not on Windows:** SocketCAN, the phone gateway's Bluetooth channel and its Bonjour announcement (the gateway itself works
-  over Wi-Fi at an address you type). Windows has had far less testing than Linux: it has not been run against a car.
+  over Wi-Fi at an address you type). Windows has had less testing than Linux: both builds have run on a real Windows machine, one of them against a car.
 
 `./hondascan selfcheck` reports what is present and what is missing.
 
@@ -61,7 +61,8 @@ Adapter names and what has been tested: https://github.com/huhwhatbruh/HondaDiag
 
 ## Safety
 
-This release only reads. Confirmed on one car so far (2015 Honda Accord 2.4, GODIAG GD101 in J2534 mode); everything
+Reading is confirmed on one car (2015 Honda Accord 2.4, GODIAG GD101 in J2534 mode), and clearing codes has run on a car. The
+actuator tests and the writing functions have never been run on one, so do not use them on yours; everything
 else is untested, and the program says "untested" where it is. Please report what you see.
 
 This is an independent project and is not affiliated with or endorsed by Honda.

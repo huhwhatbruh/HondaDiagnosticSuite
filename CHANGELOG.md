@@ -1,7 +1,17 @@
 # Changelog
 
-All notable changes to the read-only release. Format after [Keep a Changelog](https://keepachangelog.com/); versions follow
+All notable changes to the release. Format after [Keep a Changelog](https://keepachangelog.com/); versions follow
 [Semantic Versioning](https://semver.org/) from 1.0.0 on. Each release's page has the archives and their checksums.
+
+## [0.5.0]
+
+### Changed
+- **The release is no longer read-only.** Clearing trouble codes, three actuator tests (radiator fan, A/C compressor clutch, 12 V
+  battery fan) and eight writing functions (the VTC learn, the first stage of the CVT inclination-sensor learn, the instrument
+  cluster's maintenance resets) are in the release, each allowlisted per system, behind a confirmation at every step, with a
+  time limit and control handed back to the control unit at the end. Only clearing codes has been run on a car; the actuator
+  tests and the writing functions have not, so do not use them on yours. The desktop app shows the Tests and Writes tabs.
+- Both Windows builds have run on a real Windows machine, one of them against a car.
 
 ## [0.4.0]
 

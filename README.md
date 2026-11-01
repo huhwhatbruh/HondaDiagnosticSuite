@@ -7,7 +7,7 @@ HDS is the software Honda dealers use. It only runs on Windows. This does the re
 > **Confirmed on a 2015 Accord (K24W1, CVT) and by other owners on their own cars** (see [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles)). I still need more Hondas:
 > **[open a vehicle report](../../issues/new?template=vehicle_report.md)**
 
-[Download v0.4.0](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.4.0) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
+[Download v0.5.0](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.5.0) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
 
 
 A generic OBD-II reader talks to the emissions computer and knows a few standard codes. A modern Honda carries a dozen or more
@@ -26,8 +26,6 @@ diagnostic language. This software speaks it.
 - **Every drive recorded.** Codes that came and went, fuel economy, misfires, knock, and a health report against a saved baseline.
 - **Native Linux.** The GODIAG GD101 in J2534 mode runs through a small C driver written for this
   project. SocketCAN, slcan, J2534, ELM327 and clones are supported too.
-- **Honda's own database.** 182 systems, 36,000 trouble codes, 35,397 help texts, 16,031 ECU identifiers, 25,882 CAN signal
-  definitions and 3,607 unit converters. It is in the repo, so a clone builds and runs.
 - **Control units found without a lookup table.** HDS decides which ECU is which by running a small rule program against what the
   car answers. That program is run here too, and the Rust version agrees with it.
 
@@ -55,73 +53,48 @@ $ hondascan -a socketcan:can0 live PGM-FI  # live engine values with units
 $ hondascan -a sim scan                    # no car? use the built-in simulated one
 ```
 
-The desktop app `hondascan-gui` wraps the same scanner. Download, udev rule, adapter setup: [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started).
+The desktop app `hondascan-gui` wraps the same scanner.
 
-## Download and requirements
+## Install and build
 
-Three archives are attached to [each release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.4.0), each with a
-`.sha256` file.
+Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.5.0) has three archives:
+`hondascan-0.5.0-linux-x86_64.tar.gz`, `hondascan-0.5.0-windows-x86_64.zip` (with the desktop app) and
+`hondascan-0.5.0-windows-i686.zip` (command line only, for 32-bit J2534 DLLs). There is nothing to install for the program
+itself: no Python, no Rust, no Wine. Which Linux and Windows versions run it, the udev rule, the C compiler the GD101's J2534 mode
+needs and the serial and CAN set-up are on [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started).
 
-| Archive | Runs on |
-|---|---|
-| `hondascan-0.4.0-linux-x86_64.tar.gz` | Built on Ubuntu 22.04 (glibc 2.35). Any Linux x86_64 with glibc 2.35 or newer (`ldd --version`). Tested on Ubuntu 22.04 and Arch (CachyOS); Debian 12+ and Fedora should run it but are not tested |
-| `hondascan-0.4.0-windows-x86_64.zip` | 64-bit Windows 10 or 11. Built with mingw-w64 and run under Wine, but **not yet run on a real Windows machine or a car**: reports are the most useful thing you can send |
-| `hondascan-0.4.0-windows-i686.zip` | 32-bit Windows (also runs on 64-bit Windows). Built with mingw-w64; it is the one to use with a **32-bit J2534 DLL**. **Not yet run on a real Windows machine or a car** |
-
-Nothing to install for the app itself: no Python, no Rust, no Wine. The machine needs:
-
-- A desktop with OpenGL (EGL) and X11 or Wayland (Mesa and `libxkbcommon`, which desktop distributions normally include).
-- **GODIAG GD101 or another USB adapter:** copy `60-hondascan.rules` from the archive into `/etc/udev/rules.d/`, run
-  `sudo udevadm control --reload` and replug the adapter, or ModemManager can grab it.
-- **GD101 in J2534 mode:** a C compiler (`cc`, `gcc` or `clang`), once, to build the native driver.
-- **Serial and ELM327 adapters:** your user needs the serial group (`dialout` on Debian and Ubuntu, `uucp` on Arch).
-- **SocketCAN adapters:** the interface must be up (`sudo ip link set can0 up type can bitrate 500000`).
-
-On **Windows** the archive is the same three programs as `.exe` files (`hondascan.exe`, `hondascan-gui.exe`, `hondascan-rpc.exe`),
-with nothing to install for them. Serial and ELM327 adapters (USB, or Bluetooth once paired) work through their COM port:
-`hondascan.exe -a elm:COM5 scan`; the app lists the ports it finds. J2534 devices, the GD101 among them, use the maker's driver
-package, which registers a J2534 DLL: `-a gd101-j2534` or `-a j2534:NAME` finds it. The 64-bit build loads only 64-bit
-DLLs, and many J2534 DLLs are 32-bit: for those use the 32-bit archive (`windows-i686`), which loads only 32-bit DLLs. SocketCAN and the phone gateway's Bluetooth and Bonjour parts are Linux only. The `.exe` files are not code-signed, so Windows SmartScreen
-may warn the first time: choose **More info**, then **Run anyway**.
-
-## Build from source
-
-You need `rustup` (it installs the Rust version pinned in `rust-toolchain.toml`) and, for the GD101's J2534 mode, a C compiler. The vehicle database is in the repository,
-so there is nothing to generate first.
+From source, with `rustup` (it installs the version pinned in `rust-toolchain.toml`):
 
 ```
 cd hondascan && cargo run --release --bin hondascan -- -a sim scan   # scanner, against the simulated car
-cd hondascan && cargo build --release                                 # also builds hondascan-rpc, the app's backend
 cd hondascan-gui && cargo run --release                               # the desktop app
 ```
 
-**Record your own car.** Recordings of the author's car are not included. Make yours: run any command with `--log capture.log`
-(`hondascan -a <adapter> --log capture.log scan`), then turn the capture into a simulator profile with
-`cargo run --release --bin profile-from-capture -- capture.log profiles/mycar.json.gz --vin 00000000000000000`, which replaces your
-VIN with the one you give it, so the profile can be shared.
+To record your own car, run any command with `--log capture.log`; `profile-from-capture` turns the capture into a shareable
+simulator profile and replaces your VIN: [Contributing a vehicle](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Contributing-a-Vehicle).
 
 ## Why should you trust it?
 
 - **Checked by execution** against Honda's own code, not against expectations written by hand.
-- **The release is read-only, and allowlisted.** It sends only a short list of diagnostic services, never to "every ECU at once",
-  and refuses everything else inside the program. A build from source also contains the code for clearing codes, actuator tests and writing, which
-  has never been run on a car; do not use it on yours. Details in [Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety).
+- **Allowlisted.** It sends a short list of diagnostic services, never to "every ECU at once", and refuses everything else inside the
+  program. The ones that change something (clearing codes, three actuator tests, eight writing functions) each need a confirmation. Clearing
+  codes has run successfully on a car; the actuator tests and the writing functions have never been run on one, so do not use them on yours. Details in [Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety).
 - **Open source.** GPL-3.0-or-later, with the vehicle database included, so a clean clone builds and runs.
 
 ## Status
 
 | | |
 |---|---|
-| **Works on a real car** | Scan of the PCM (engine and CVT answer from one address), SRS and instrument cluster; trouble codes, live data, freeze frame, emissions readiness, recorded drives, health report, JSON export, `.tar.gz` backup. 2015 Accord, GD101 in J2534 mode. |
-| **Simulator only** | SocketCAN, slcan, ELM327 and clones, K-line (ISO 14230). Clearing codes, three actuator tests (radiator fan, A/C compressor clutch, 12 V battery fan) and 8 writing functions (VTC learn, first stage of the CVT inclination-sensor learn, cluster maintenance resets), all allowlisted, confirmed and handing control back on error. **Never sent to a car, so not in the release.** A phone gateway for an iPhone exists in the source (reads only in the release; tests and writes only in a build from source, each behind a confirmation); the app is not published. |
-| **Not covered** | ABS and power steering did not answer from the connector on this car. This PCM refuses direct memory reads (a permanent calibration bit), so engine maps come from live data, not stored tables. 113 of the 182 systems use the older K-line or Honda's own older protocol (the K-line client exists; for the older protocol there is only a session probe in the source, and an ELM327 cannot speak it). Reflash, key and immobilizer functions and the second CVT learn stage are not built. Linux is the tested platform; Windows builds and runs under Wine only. |
+| **Works on a real car** | Scan of the PCM (engine and CVT answer from one address), SRS and instrument cluster; trouble codes, live data, freeze frame, emissions readiness, recorded drives, health report, JSON export, `.tar.gz` backup. 2015 Accord, GD101 in J2534 mode. Clearing trouble codes has also run successfully on a car, from a build from source: it needs a confirmation. |
+| **Simulator only** | SocketCAN, slcan, ELM327 and clones, K-line (ISO 14230). Three actuator tests (radiator fan, A/C compressor clutch, 12 V battery fan) and 8 writing functions (VTC learn, first stage of the CVT inclination-sensor learn, cluster maintenance resets), all allowlisted, confirmed and handing control back on error. **Never sent to a car.** In the release, behind a confirmation at each step. A phone gateway for an iPhone exists in the source, each action behind a confirmation; the app is not published. |
+| **Not covered** | ABS and power steering did not answer from the connector on this car. This PCM refuses direct memory reads (a permanent calibration bit), so engine maps come from live data, not stored tables. 113 of the 182 systems use the older K-line or Honda's own older protocol (the K-line client exists; for the older protocol there is only a session probe in the source, and an ELM327 cannot speak it). Reflash, key and immobilizer functions and the second CVT learn stage are not built. Linux is the best-tested platform; both Windows builds have run on a real Windows machine, one of them against a car. |
 
 Field notes from the car (the misfires with no code, the ABS that never answered, the memory-read wall) are in [How it was built](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/How-It-Was-Built). Details per vehicle: [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles).
 
 ## Help wanted
 
 - **Other Hondas, any adapter.** A scan and a code read is already valuable: [Contributing a vehicle](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Contributing-a-Vehicle).
-- **Windows testing.** The Windows builds have only run under Wine: a scan and a code read on a real Windows machine, with the adapter you have, tells us what is left. The 32-bit build for 32-bit J2534 DLLs is new and untested on a real machine, so a report from someone with such an adapter helps most.
+- **Windows testing.** Both builds have run on real Windows, one against a car. A scan and a code read with the adapter you have, especially a 32-bit J2534 DLL with the 32-bit build, tells us what is left.
 - **macOS.** Untried; the serial and J2534 code is the Unix path, so it may be close.
 - **Bugs and ideas:** the [issue tracker](../../issues).
 

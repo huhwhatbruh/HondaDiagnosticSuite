@@ -225,9 +225,6 @@ impl<L: KwpLink> KwpClient<L> {
     fn check(&self, req: &[u8]) -> Result<(), KwpError> {
         let not = |s: String| Err(KwpError::NotAllowed(s));
         let sid = req[0];
-        if crate::READ_ONLY_RELEASE && sid == CLEAR_DTC {
-            return not(format!("KWP service 0x{sid:02X}: {}", crate::NOT_IN_RELEASE));
-        }
         let Some(subs) = allowed(sid) else { return not(format!("KWP service 0x{sid:02X} is not in hondascan's allowlist")) };
         if req.len() < min_length(sid) {
             return not(format!("KWP service 0x{sid:02X}: request {} is too short", hex(req)));

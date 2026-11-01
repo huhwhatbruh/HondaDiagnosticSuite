@@ -54,15 +54,6 @@ pub mod write;
 pub mod writerun;
 pub mod writeservice;
 
-/// True in the public release (`package.rs` builds with `--cfg hondascan_packaged`): that build only reads. The UDS and
-/// KWP clients refuse every service that changes the car (clear codes, IO control, routines) and SecurityAccess, so the
-/// CLI, the backend and the app cannot send them whatever they are asked; the public docs call the release read-only
-/// and this is what makes that true. A checkout build is unaffected.
-pub const READ_ONLY_RELEASE: bool = cfg!(hondascan_packaged);
-
-/// The refusal text both clients give for a service the release does not send.
-pub const NOT_IN_RELEASE: &str = "not available in this release: it only reads";
-
 /// A data file the program needs (the database, the GD101 driver source, the recorded-car profiles): the one packaged next to the
 /// executable if there is one (hondascan-gui/src/bin/package.rs lays it out so), else the copy in this crate's source tree.
 /// The source-tree fallback never fires in a real package (everything ships beside the executable), but it would

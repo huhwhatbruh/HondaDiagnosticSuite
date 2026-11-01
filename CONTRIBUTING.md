@@ -6,8 +6,8 @@ code read, then open a [vehicle report](../../issues/new?template=vehicle_report
 
 ## Before you change code
 
-- **The release is read-only, and that is a promise.** The client refuses everything except a short allowlist of diagnostic
-  services. A change that widens what can be sent to a car needs an issue first, and will not be merged without a plan for
+- **What can be sent to a car is allowlisted, and that is a promise.** The client refuses everything except a short allowlist of
+  services, and the ones that change something need a confirmation. A change that widens what can be sent to a car needs an issue first, and will not be merged without a plan for
   checking it on a simulator that is at least as strict as the real ECU.
 - **Nothing private in a pull request.** No VINs, no captures from your own car, no personal paths. A capture can be turned into a
   shareable simulator profile with `profile-from-capture ... --vin 00000000000000000`.

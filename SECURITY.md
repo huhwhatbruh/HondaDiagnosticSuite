@@ -4,7 +4,7 @@
 
 This tool talks to a car's diagnostic bus, so the security-relevant bugs are:
 
-- a way to make the **read-only release send something it should refuse** (anything outside the allowlisted services, or a request
+- a way to make the **release send something it should refuse** (anything outside the allowlisted services, or a request
   to every control unit at once);
 - a flaw in the **simulator or the checks** that would let such a request look safe;
 - a problem in **how releases are built or distributed** (a checksum that does not match, an archive that carries private data);

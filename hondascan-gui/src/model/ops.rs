@@ -14,8 +14,7 @@ impl qobject::AppModel {
             let r = self.rust();
             let vin = self.vin().to_string();
             let ecu = self.watched_ecu();
-            // The public release only reads (package.rs builds with --cfg hondascan_packaged): no Tests or Writes tab; the backend refuses them anyway.
-            let offered = ecu.as_ref().filter(|_| !cfg!(hondascan_packaged));
+            let offered = ecu.as_ref();
             (
                 actuator::running_json(r.act_status.as_ref(), &r.act_tests),
                 offered.map_or_else(|| json!({}), |e| actuator::tests_json(e, &r.act_tests, r.act_status.as_ref())),
