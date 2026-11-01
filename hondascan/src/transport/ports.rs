@@ -34,7 +34,7 @@ pub fn serial_ports() -> Vec<(String, String, String, String)> {
 /// ModemManager probes new serial ports with AT commands, which an ELM327 answers: replies go to the wrong reader and the
 /// adapter runs out of step or resets. A warning, or None when it is not running or the udev rule (packaging/60-hondascan.rules,
 /// ID_MM_DEVICE_IGNORE) tells it to leave `dev` alone.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 pub fn modem_manager_warning(dev: &str) -> Option<String> {
     let running = std::fs::read_dir("/proc").ok()?.filter_map(Result::ok).any(|e| {
         e.file_name().to_string_lossy().chars().all(|c| c.is_ascii_digit()) && std::fs::read_to_string(e.path().join("comm")).is_ok_and(|c| c.trim() == "ModemManager")
@@ -53,8 +53,8 @@ pub fn modem_manager_warning(dev: &str) -> Option<String> {
     Some(format!("ModemManager is running and may probe {dev} with AT commands: install packaging/60-hondascan.rules and replug the adapter, or stop it (sudo systemctl stop ModemManager)"))
 }
 
-/// No program on Windows probes serial ports behind our back the way ModemManager does.
-#[cfg(not(unix))]
+/// ModemManager is a Linux program: no other system probes serial ports behind our back that way.
+#[cfg(not(target_os = "linux"))]
 pub fn modem_manager_warning(_dev: &str) -> Option<String> {
     None
 }

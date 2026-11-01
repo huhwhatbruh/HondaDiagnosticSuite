@@ -1,6 +1,6 @@
 //! What each HDS system type is, in plain words, and where it sits on the car drawing (ported from
 //! hondascan-app/src/lib/systems.ts). The type names are HDS's (can_addresses.system_type).
-pub struct Info { pub name: String, pub blurb: String, pub zone: &'static str, pub icon: &'static str }
+pub struct Info { pub name: String, pub blurb: String, pub zone: &'static str }
 
 /// Car drawing coordinates, viewBox 0 0 1000 440, nose to the right: (x, y, label above?).
 pub fn zone(id: &str) -> (f32, f32, bool) {
@@ -38,24 +38,12 @@ pub fn info(system_type: &str, display: &str) -> Info {
         _ => (if display.is_empty() { t } else { display }, "other", ""),
     };
     let blurb = if blurb.is_empty() { format!("HDS system type {t}.") } else { blurb.to_string() };
-    Info { name: name.to_string(), blurb, zone, icon: icon_of(zone, t) }
+    Info { name: name.to_string(), blurb, zone }
 }
 
 /// Several systems at one address are one computer (the Accord's PCM runs the engine and the CVT at 0x0E).
 pub fn shared_with(address: u32, system_type: &str, all: &[crate::api::Ecu]) -> bool {
     all.iter().any(|x| x.address == address && x.system_type != system_type)
-}
-
-/// The icon for a system's zone (Phosphor, regular weight; the web app used the Lucide equivalents).
-pub fn icon_of(zone: &str, system_type: &str) -> &'static str {
-    use egui_phosphor::regular as i;
-    match (zone, system_type) {
-        ("engine", _) => i::ENGINE, ("transmission", _) | ("shifter", _) | ("rear", _) => i::GEAR, ("brakes", _) => i::DISC,
-        ("parking", _) => i::LETTER_CIRCLE_P, ("steering", _) => i::STEERING_WHEEL, ("airbags", _) => i::SHIELD_CHECK,
-        ("meter", _) => i::GAUGE, ("hud", _) => i::SCAN, ("tires", _) => i::TIRE, ("gateway", _) => i::NETWORK,
-        ("camera", _) => i::CAMERA, ("front", _) => i::SPEAKER_HIGH, ("battery", _) => i::BATTERY_CHARGING, ("motor", _) => i::LIGHTNING,
-        (_, "?") => i::CPU, _ => i::CAR,
-    }
 }
 
 #[cfg(test)]

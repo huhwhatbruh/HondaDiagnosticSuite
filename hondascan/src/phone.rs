@@ -1,16 +1,20 @@
-//! The phone gateway: a read-only HTTP view of the running backend, for the iPhone app (ios/).
+//! The phone gateway: an HTTP view of the running backend, for the iPhone app (ios/): live values and reads, and, in a build from source only, the confirmed actions of `calls.rs`.
 //!
 //! It runs inside the backend process that owns the car (`hondascan-rpc` with HONDASCAN_PHONE=addr:port), so the phone shares
-//! the one bus owner instead of fighting for it. The gateway never forwards anything a client sends: it has three fixed
-//! routes (below) and no way to name a method, so a write, a clear or an actuator test cannot be reached from the phone. It
+//! the one bus owner instead of fighting for it. The gateway never forwards anything a client sends: every route is fixed
+//! and tied to one backend method whose parameters are named and typed here (`phone/calls.rs`), and nothing a client sends
+//! names a method. Actuator tests, writes and the clear exist as routes, each needing `confirm: true`; the backend applies the
+//! rules (whitelist, VIN, conditions, time limit) and a packaged release refuses them. It
 //! asks the backend for one thing itself, four times a second: `snapshot` (service.rs), which reads this process's memory
 //! and puts no traffic on the bus.
 //!
 //!   GET /v1/snapshot?watch=SYSTEM.SYMBOL,...   the live document, with values for the watched signals only
 //!   GET /v1/signals                            every signal read so far, once: {"signals": [{system, symbol, unit, description, value}]}
+//!   the calls table                            /v1/... routes tied one to one to backend methods (`phone/calls.rs`)
 //!   POST /v1/log                               the app's own measurements, JSON lines (at most 64 KiB), appended to phone-client.jsonl
-//! All need `Authorization: Bearer <token>`. `/v1/log` writes a file on the laptop and nothing else: no method of the backend
-//! is reachable from any route. Logs (see `log.rs`): `phone-gateway.jsonl` has one `req` line per request (peer, route,
+//! All need `Authorization: Bearer <token>`. The link is plain HTTP, so the pairing code crosses it unencrypted: use it on a network
+//! you control (the box's own WPA2 hotspot, your home Wi-Fi), not on a shared one.
+//! `/v1/log` writes a file on the box and nothing else. Logs (see `log.rs`): `phone-gateway.jsonl` has one `req` line per request (peer, route,
 //! status, bytes, handling ms) and one `backend` line per snapshot (ms the backend took to answer, bytes, signals). The live
 //! document is {"t", "age_s", "snapshot", "events"}: `snapshot` is the backend's answer (null until the first one) with
 //! `signals` cut down to the watched ones (first reading of a symbol wins, each with its low and high), `events` the last
@@ -21,15 +25,18 @@
 //! Plumbing: `attach` puts a merged reader in front of the backend (the app's own lines plus the gateway's `snapshot`
 //! requests, ids "phone:...") and a tap behind it (answers to those ids stay here, every other line goes on to the app).
 //! Submodules: `http` (one request in, one reply out), `guard` (the pairing code and the lockout), `log` (the log files).
+mod calls;
 mod guard;
 mod http;
 mod log;
 
+pub use calls::HANDBACK_AFTER;
 pub use guard::new_token;
 pub use http::Conn;
 pub use log::log_dir;
 pub(crate) use log::Logs;
 
+use calls::Relay;
 use guard::{same_token, Refusal, Throttle, MIN_TOKEN};
 use http::{compress, read_request, respond, Next, Request, COMPRESS_OVER};
 use serde_json::{json, Map, Value};
@@ -74,6 +81,7 @@ struct Ctx {
     token: Vec<u8>,
     logs: Arc<Logs>,
     throttle: Throttle,
+    relay: Arc<Relay>,
 }
 
 fn signal_id(s: &Value) -> String {
@@ -164,6 +172,7 @@ impl Read for ChanReader {
 /// remembered on the way past.
 struct Tap {
     inner: Out,
+    relay: Arc<Relay>,
     cache: Shared,
     logs: Arc<Logs>,
     line: Vec<u8>,
@@ -172,6 +181,9 @@ struct Tap {
 impl Tap {
     fn handle(&mut self, line: &[u8]) -> std::io::Result<()> {
         if let Ok(mut msg) = serde_json::from_slice::<Value>(line) {
+            if self.relay.deliver(&msg) {
+                return Ok(());
+            }
             if msg["id"].as_str() == Some(PHONE_ID) {
                 let ms = self.cache.lock().unwrap().asked.take().map(|a| a.elapsed().as_secs_f64() * 1000.0);
                 match msg.get_mut("result").map(Value::take) {
@@ -236,11 +248,11 @@ pub fn from_env(inp: In, out: Out) -> Result<(In, Out), String> {
         Err(_) => new_token()?,
     };
     let dir = log_dir();
-    // Bluetooth goes on with the gateway unless HONDASCAN_PHONE_BLE=off: it needs the laptop's adapter, and works without
+    // Bluetooth goes on with the gateway unless HONDASCAN_PHONE_BLE=off: it needs the box's adapter, and works without
     // it (the gateway then serves Wi-Fi only and says so in the log)
     let bluetooth = std::env::var("HONDASCAN_PHONE_BLE").map_or(true, |v| v != "off");
     let wired = attach_with(inp, out, &addr, &token, dir.as_deref(), bluetooth)?;
-    // so the phone can find the laptop without a typed address; the gateway works without it
+    // so the phone can find the box without a typed address; the gateway works without it
     #[cfg(unix)]
     match addr.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()) {
         Some(port) => {
@@ -282,6 +294,12 @@ pub fn attach_with(inp: In, out: Out, addr: &str, token: &str, log_dir: Option<&
             closed.store(true, Ordering::Relaxed);
         });
     }
+    let relay = Arc::new(Relay::new(tx.clone()));
+    let closed_for_watchdog = closed.clone();
+    {
+        let relay = relay.clone();
+        std::thread::spawn(move || relay.watchdog(closed_for_watchdog));
+    }
     let asker = cache.clone();
     std::thread::spawn(move || {
         let req = json!({"id": PHONE_ID, "method": "snapshot", "params": {}}).to_string();
@@ -306,7 +324,7 @@ pub fn attach_with(inp: In, out: Out, addr: &str, token: &str, log_dir: Option<&
     });
     // one handler for every transport: a connection from the Wi-Fi listener below or from the Bluetooth channel (ble.rs)
     let serve: Arc<dyn Fn(Box<dyn Conn>) + Send + Sync> = {
-        let (ctx, clients) = (Arc::new(Ctx { cache: cache.clone(), token: token.as_bytes().to_vec(), logs: logs.clone(), throttle: Throttle::default() }), Arc::new(AtomicUsize::new(0)));
+        let (ctx, clients) = (Arc::new(Ctx { cache: cache.clone(), token: token.as_bytes().to_vec(), logs: logs.clone(), throttle: Throttle::default(), relay: relay.clone() }), Arc::new(AtomicUsize::new(0)));
         Arc::new(move |mut conn: Box<dyn Conn>| {
             if clients.fetch_add(1, Ordering::Relaxed) >= MAX_CLIENTS {
                 clients.fetch_sub(1, Ordering::Relaxed);
@@ -332,7 +350,7 @@ pub fn attach_with(inp: In, out: Out, addr: &str, token: &str, log_dir: Option<&
             serve(Box::new(conn));
         }
     });
-    let tap: Out = Arc::new(Mutex::new(Tap { inner: out, cache, logs, line: vec![] }));
+    let tap: Out = Arc::new(Mutex::new(Tap { inner: out, relay, cache, logs, line: vec![] }));
     Ok((Box::new(BufReader::new(ChanReader { rx, cur: vec![], pos: 0 })), tap))
 }
 
@@ -344,12 +362,16 @@ fn answer(req: &Request, peer: &str, ctx: &Ctx) -> (&'static str, &'static str, 
     match ctx.throttle.attempt(peer, same_token(req.bearer.as_bytes(), &ctx.token)) {
         Err(Refusal::Locked(wait)) => return ("429 Too Many Requests", TEXT, format!("too many wrong codes; wait {wait} s\n"), route_name),
         Err(Refusal::Wrong) => return ("401 Unauthorized", TEXT, "pairing code required\n".into(), route_name),
-        Ok(()) => {}
+        Ok(()) => ctx.relay.touch(),
     }
     let (status, kind, body) = match (route, req.method.as_str()) {
         ("/v1/snapshot", "GET") => ("200 OK", "application/json", document(&ctx.cache, &watch_list(query)).to_string()),
         ("/v1/signals", "GET") => ("200 OK", "application/json", signal_index(&ctx.cache).to_string()),
         ("/v1/log", "POST") => client_log(&req.body, peer, &ctx.logs),
+        (r, m) if calls::is_call(r) => {
+            let (status, body) = calls::call(&ctx.relay, r, m, query, &req.body, calls::sim_adapter(&ctx.cache)).unwrap_or(("404 Not Found", "not found\n".into()));
+            (status, "application/json", body)
+        }
         ("/v1/snapshot" | "/v1/signals" | "/v1/log", _) => ("405 Method Not Allowed", TEXT, "not allowed\n".into()),
         _ => ("404 Not Found", TEXT, "not found\n".into()),
     };
@@ -357,7 +379,7 @@ fn answer(req: &Request, peer: &str, ctx: &Ctx) -> (&'static str, &'static str, 
 }
 
 /// The app's own measurements, JSON lines, appended to `phone-client.jsonl` with the sender's address. This is a log on the
-/// laptop only; it reaches nothing of the car's.
+/// box only; it reaches nothing of the car's.
 fn client_log(body: &[u8], peer: &str, logs: &Logs) -> (&'static str, &'static str, String) {
     let mut stored = true;
     for line in body.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
@@ -378,8 +400,8 @@ fn client_log(body: &[u8], peer: &str, logs: &Logs) -> (&'static str, &'static s
 
 /// One connection: requests are answered in turn until the client closes it, asks for it to be closed, sends something
 /// refused, or is idle for IDLE. The log line of each request says how long the request took to arrive (`wait_ms`: from the
-/// connection opening, or from the last reply, to the request's first byte) apart from how long the laptop took to answer
-/// (`ms`), which is what tells a slow laptop from a slow phone or network.
+/// connection opening, or from the last reply, to the request's first byte) apart from how long the box took to answer
+/// (`ms`), which is what tells a slow box from a slow phone or network.
 fn client(mut conn: Box<dyn Conn>, ctx: &Ctx) -> std::io::Result<()> {
     conn.set_nodelay();
     let peer = conn.peer();
@@ -392,7 +414,7 @@ fn client(mut conn: Box<dyn Conn>, ctx: &Ctx) -> std::io::Result<()> {
             Next::Request(r) => (Some(r), false),
             Next::Closed => {
                 if first {
-                    // a connection that sent nothing (the phone checking that the laptop is there)
+                    // a connection that sent nothing (the phone checking that the box is there)
                     logs.gateway.write(json!({"ev": "probe", "peer": peer, "wait_ms": waiting_since.elapsed().as_secs_f64() * 1000.0}));
                 }
                 return Ok(());

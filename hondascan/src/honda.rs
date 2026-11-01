@@ -156,6 +156,8 @@ pub struct HondaCan {
     allow_clear: bool,
     clients: HashMap<u32, UdsClient>,
     pub functional: bool, // requests go out on OBD_FUNCTIONAL_ID, the reply filter picks the ECU
+    /// Addresses that answered the all-ECU wakeup of the last `present`; None when none was sent (ELM, K-line).
+    pub last_wakeup: Option<Vec<u32>>,
     /// The session's frame log, when one is attached. A write refuses to run without it.
     pub capture: Option<Arc<CaptureLog>>,
 }
@@ -177,7 +179,7 @@ fn io_of_ref(e: &UdsError) -> Result<(), std::io::Error> {
 
 impl HondaCan {
     pub fn new(adapter: Arc<dyn Adapter>, db: Arc<Database>, allow_clear: bool) -> HondaCan {
-        HondaCan { adapter, db, allow_clear, clients: HashMap::new(), functional: false, capture: None }
+        HondaCan { adapter, db, allow_clear, clients: HashMap::new(), functional: false, last_wakeup: None, capture: None }
     }
 
     /// A note in the frame log (write start/stop, refusals); no-op without a log.
@@ -296,10 +298,16 @@ impl HondaCan {
     }
 
     /// The addresses that answer TesterPresent (3E 00), each on its own id; if none does, the ones that answer it on
-    /// OBD_FUNCTIONAL_ID, and from then on every request goes there (see `use_functional`).
+    /// OBD_FUNCTIONAL_ID, and from then on every request goes there (see `use_functional`). On raw CAN the all-ECU wakeup
+    /// (`wakeup`: HDS's discovery sends it first, `test.dll` FUN_10001432, README "Not confirmed yet") goes out before the
+    /// per-address requests; its answers are not counted (only a physical answer makes a system usable) but kept in `last_wakeup` for the session summary.
     pub fn present(&mut self, addresses: &[u32], timeout: f64) -> Result<Vec<u32>, std::io::Error> {
         let mut addresses = addresses.to_vec();
         addresses.sort();
+        self.last_wakeup = None;
+        if self.adapter.has_probe() && self.adapter.has_broadcast() {
+            self.last_wakeup = Some(self.wakeup(timeout)?.into_keys().collect());
+        }
         let mut found = self.present_physical(&addresses, timeout)?;
         if found.is_empty() && self.adapter.has_broadcast() {
             found = self.answer_functional(OBD_FUNCTIONAL_ID, &addresses, timeout.max(0.3))?.into_keys().collect();

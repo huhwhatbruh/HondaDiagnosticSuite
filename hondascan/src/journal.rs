@@ -171,6 +171,14 @@ pub fn render_summary(s: &Value) -> String {
         if truthy(get(s, "end_reason")) { py(get(s, "end_reason")) } else { "still running".into() }
     ));
     p(format!("- {} systems; scan {} s; {} reads, {} failed", arr(get(s, "ecus")).len(), py(get(s, "scan_s")), py(get(get(s, "reads"), "ok")), py(get(get(s, "reads"), "failed"))));
+    if let Some(w) = s.get("wakeup").and_then(Value::as_array) {
+        let who: Vec<String> = w.iter().map(|a| format!("{:02X}", a.as_u64().unwrap_or(0))).collect();
+        p(format!("- all-ECU wakeup (3E 00 on 18DBEFF1) answered by: {}", if who.is_empty() { "nobody".to_string() } else { who.join(" ") }));
+    }
+    if let Some(m) = s.get("missing").and_then(Value::as_array) {
+        let who: Vec<String> = m.iter().map(|x| format!("{} (0x{:02X})", py(get(x, "name")), get(x, "address").as_i64().unwrap_or(0))).collect();
+        p(format!("- NOT ANSWERING: {}; every CAN Honda has them, so nothing from them is in this session", who.join(", ")));
+    }
     p(String::new());
     for x in ["## Systems", "| address | type | database | identity |", "|---|---|---|---|"] {
         p(x.into());

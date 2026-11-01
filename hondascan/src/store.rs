@@ -243,6 +243,15 @@ impl Store {
         .collect()
     }
 
+    /// The VIN of the newest session recorded on a real adapter (None: only simulated runs, or none).
+    pub fn last_real_vin(&self) -> Option<String> {
+        self.con
+            .lock()
+            .unwrap()
+            .query_row("SELECT vin FROM sessions WHERE adapter NOT LIKE 'sim%' AND vin<>'UNKNOWN' ORDER BY started DESC LIMIT 1", [], |r| r.get(0))
+            .ok()
+    }
+
     pub fn last_session(&self, vin: &str, before: i64) -> Option<i64> {
         self.con
             .lock()

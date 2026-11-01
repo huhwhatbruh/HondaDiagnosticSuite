@@ -1,7 +1,7 @@
 //! The hondascan backend (`hondascan-rpc`, hondascan/src/rpc.rs) as a child process speaking JSON lines.
 //!
-//! `call` never blocks: it writes the request and returns a receiver for the reply. A reader thread matches replies to
-//! requests by id, forwards id-less lines as `Event::Backend` and wakes the UI. If the process exits, every call still
+//! `call` never blocks: it writes the request and returns; the reader thread hands the reply to the handler given with
+//! the call (matched by id) and anything without an id to the sink as an `Event`. If the process exits, every call still
 //! waiting fails with the tail of its stderr and the next call starts a fresh process.
 
 use serde_json::{json, Value};
@@ -10,12 +10,15 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub type Reply = Result<Value, String>;
-type Pending = Arc<Mutex<HashMap<u64, Sender<Reply>>>>;
+/// Runs on the reader thread: it must only forward the reply (to the Qt thread), not use it.
+pub type Handler = Box<dyn FnOnce(Reply) + Send>;
+type Pending = Arc<Mutex<HashMap<u64, Handler>>>;
+/// Receives what the backend sends on its own, on the reader thread.
+pub type Sink = Arc<dyn Fn(Event) + Send + Sync>;
 
 pub enum Event {
     Backend { event: String, data: Value },
@@ -31,38 +34,30 @@ struct Proc {
 pub struct Backend {
     proc: Mutex<Option<Proc>>,
     next_id: AtomicU64,
-    events: Sender<Event>,
-    ctx: eframe::egui::Context,
+    sink: Sink,
     generation: Arc<AtomicU64>, // which process is current: a process that was replaced must not announce its exit
 }
 
 impl Backend {
-    pub fn new(ctx: eframe::egui::Context) -> (Arc<Self>, Receiver<Event>) {
-        let (events, rx) = channel();
-        (Arc::new(Backend { proc: Mutex::new(None), next_id: AtomicU64::new(1), events, ctx, generation: Arc::default() }), rx)
+    pub fn new(sink: Sink) -> Arc<Self> {
+        Arc::new(Backend { proc: Mutex::new(None), next_id: AtomicU64::new(1), sink, generation: Arc::default() })
     }
 
-    pub fn call(&self, method: &str, params: Value) -> Receiver<Reply> {
-        let (tx, rx) = channel();
+    pub fn call(&self, method: &str, params: Value, handler: Handler) {
         let mut guard = self.proc.lock().unwrap();
         if guard.as_mut().is_none_or(|p| p.child.try_wait().ok().flatten().is_some()) {
             match self.spawn() {
                 Ok(p) => *guard = Some(p),
-                Err(e) => {
-                    let _ = tx.send(Err(e));
-                    return rx;
-                }
+                Err(e) => return handler(Err(e)),
             }
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let p = guard.as_mut().unwrap();
-        p.pending.lock().unwrap().insert(id, tx.clone());
+        p.pending.lock().unwrap().insert(id, handler);
         let line = json!({ "id": id, "method": method, "params": params }).to_string() + "\n";
         if let Err(e) = p.stdin.write_all(line.as_bytes()).and_then(|_| p.stdin.flush()) {
-            p.pending.lock().unwrap().remove(&id);
-            let _ = tx.send(Err(format!("backend not reachable: {e}")));
+            if let Some(h) = p.pending.lock().unwrap().remove(&id) { h(Err(format!("backend not reachable: {e}"))); }
         }
-        rx
     }
 
     pub fn shutdown(&self) {
@@ -83,9 +78,8 @@ impl Backend {
     fn spawn(&self) -> Result<Proc, String> {
         let bin = backend_binary().ok_or("hondascan-rpc not found (build it with `cargo build` in hondascan/, or set HONDASCAN_RPC)")?;
         let (mut cmd, name) = (Command::new(&bin), bin.display().to_string());
-        cmd.stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        crate::bundled::restore_for_child(&mut cmd);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -110,33 +104,35 @@ impl Backend {
 
         let pending: Pending = Arc::default();
         let waiting = pending.clone();
-        let (events, ctx) = (self.events.clone(), self.ctx.clone());
+        let sink = self.sink.clone();
         let (generation, mine) = (self.generation.clone(), self.generation.fetch_add(1, Ordering::SeqCst) + 1);
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
                 if let Some(ev) = msg.get("event").and_then(Value::as_str) {
-                    let _ = events.send(Event::Backend { event: ev.to_string(), data: msg["data"].clone() });
-                } else if let Some(tx) = msg["id"].as_u64().and_then(|id| waiting.lock().unwrap().remove(&id)) {
-                    let _ = tx.send(match msg.get("error") {
+                    sink(Event::Backend { event: ev.to_string(), data: msg["data"].clone() });
+                } else if let Some(h) = msg["id"].as_u64().and_then(|id| waiting.lock().unwrap().remove(&id)) {
+                    h(match msg.get("error") {
                         Some(e) => Err(e["message"].as_str().unwrap_or("backend error").to_string()),
                         None => Ok(msg["result"].clone()),
                     });
                 }
-                ctx.request_repaint();
             }
             // EOF: the process is gone. Fail what is still waiting, with its last words.
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            std::thread::sleep(Duration::from_millis(50));
             let why = Vec::from(tail.lock().unwrap().clone()).join("\n");
             let why = if why.is_empty() { "backend exited".to_string() } else { why };
-            for (_, tx) in waiting.lock().unwrap().drain() {
-                let _ = tx.send(Err(why.clone()));
-            }
-            if generation.load(Ordering::SeqCst) == mine { let _ = events.send(Event::Exit(why)); }
-            ctx.request_repaint();
+            let all: Vec<Handler> = waiting.lock().unwrap().drain().map(|(_, h)| h).collect();
+            for h in all { h(Err(why.clone())); }
+            if generation.load(Ordering::SeqCst) == mine { sink(Event::Exit(why)); }
         });
         Ok(Proc { child, stdin, pending })
     }
+}
+
+impl Drop for Backend {
+    /// The app is closing: let the backend close the adapter (and hand control back) before the process is gone.
+    fn drop(&mut self) { self.shutdown(); }
 }
 
 /// The backend binary: `$HONDASCAN_RPC` if set, else the one bundled next to this executable, then (development builds only)
@@ -158,6 +154,7 @@ fn backend_binary() -> Option<PathBuf> {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use std::sync::mpsc::{channel, Receiver};
 
     /// A stand-in for hondascan-rpc (a POSIX sh script; requests look like `{"id":1,"method":"hold","params":{}}`): holds replies
     /// back and sends them in reverse order, mixes in an event and a line that is not JSON, answers an error, and dies on request
@@ -181,6 +178,11 @@ while read -r line; do
 done
 "#;
 
+    fn ask(be: &Backend, method: &str) -> Receiver<Reply> {
+        let (tx, rx) = channel();
+        be.call(method, json!({}), Box::new(move |r| { let _ = tx.send(r); }));
+        rx
+    }
     fn get(rx: &Receiver<Reply>) -> Reply { rx.recv_timeout(Duration::from_secs(10)).expect("a reply") }
 
     #[test]
@@ -191,26 +193,28 @@ done
         std::fs::write(&fake, FAKE).unwrap();
         std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
         std::env::set_var("HONDASCAN_RPC", &fake);
-        let (be, events) = Backend::new(eframe::egui::Context::default());
+        let (etx, events) = channel();
+        let etx = Mutex::new(etx);
+        let be = Backend::new(Arc::new(move |e| { let _ = etx.lock().unwrap().send(e); }));
 
-        let (a, b) = (be.call("hold", json!({})), be.call("hold", json!({})));
-        let c = be.call("release", json!({}));
+        let (a, b) = (ask(&be, "hold"), ask(&be, "hold"));
+        let c = ask(&be, "release");
         // ids 1, 2, 3, answered 3, 2, 1: each receiver gets its own
         assert_eq!((get(&a), get(&b), get(&c)), (Ok(json!(1)), Ok(json!(2)), Ok(json!(3))));
         match events.recv_timeout(Duration::from_secs(5)).unwrap() {
             Event::Backend { event, data } => assert_eq!((event.as_str(), data), ("note", json!({"held": 2}))),
             Event::Exit(w) => panic!("exit: {w}"),
         }
-        assert_eq!(get(&be.call("fail", json!({}))), Err("boom".into()));
+        assert_eq!(get(&ask(&be, "fail")), Err("boom".into()));
 
-        let waiting = be.call("hold", json!({}));
-        let _ = be.call("die", json!({}));
+        let waiting = ask(&be, "hold");
+        let _ = ask(&be, "die");
         let e = get(&waiting).unwrap_err();
         assert!(e.contains("last words"), "{e}");
         assert!(matches!(events.recv_timeout(Duration::from_secs(5)).unwrap(), Event::Exit(w) if w.contains("last words")));
 
         // the next call starts a fresh process
-        let (a, c) = (be.call("hold", json!({})), be.call("release", json!({})));
+        let (a, c) = (ask(&be, "hold"), ask(&be, "release"));
         assert!(get(&a).is_ok() && get(&c).is_ok());
         be.shutdown();
         let _ = std::fs::remove_dir_all(dir);

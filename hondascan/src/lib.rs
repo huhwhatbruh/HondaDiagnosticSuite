@@ -32,6 +32,7 @@ pub mod monitor;
 pub mod obd9141;
 pub mod ramwatch;
 pub mod phone;
+pub mod preflight;
 pub mod probes;
 pub mod recorder;
 pub mod report;
@@ -69,8 +70,10 @@ pub const NOT_IN_RELEASE: &str = "not available in this release: it only reads";
 /// compile-time literal, so `remap-path-prefix` (which only rewrites compiler-diagnostic paths) does not touch it.
 /// `package.rs` builds with `--cfg hondascan_packaged` to drop it instead.
 pub fn resource(name: &str) -> std::path::PathBuf {
-    let beside = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).filter(|p| p.exists());
-    beside.unwrap_or_else(|| dev_source_dir().join(name))
+    // beside the executables, or in a macOS app's Contents/Resources (its executables are in Contents/MacOS)
+    let dir = std::env::current_exe().ok().and_then(|p| p.parent().map(std::path::Path::to_path_buf));
+    let found = dir.and_then(|d| [d.join(name), d.join("../Resources").join(name)].into_iter().find(|p| p.exists()));
+    found.unwrap_or_else(|| dev_source_dir().join(name))
 }
 
 #[cfg(hondascan_packaged)]

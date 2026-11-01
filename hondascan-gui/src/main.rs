@@ -1,37 +1,54 @@
-//! hondascan, native: the same scanner (hondascan/, Rust, over JSON lines) behind an egui front end.
+//! hondascan, the Qt / QML front end: the logic is Rust (this crate), the screens are QML (`qml/`). It speaks JSON lines to
+//! the backend `hondascan-rpc` (a binary of `../hondascan`), so what it may send is decided by the backend's allowlist.
+// a window, not a console program: on Windows no console opens behind the app
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
+mod actuator;
+mod adapters;
 mod api;
-mod app;
 mod backend;
+mod bundled;
+mod car;
+mod baseline;
+mod drive;
 mod format;
+mod glance;
+mod handback;
+mod history;
+mod intro;
 mod live;
-mod motion;
+mod maintenance;
+mod maps;
+mod model;
 mod names;
 mod ranges;
+mod reference;
+mod scannote;
+mod selfcheck;
+mod selftests;
 mod settings;
 mod systems;
-mod theme;
-mod ui;
-mod widgets;
+mod sysview;
+#[cfg(test)]
+mod text_audit;
+mod vehicle;
+mod writes;
 
-use eframe::egui;
+use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 
-/// `HONDASCAN_SIZE=WxH` overrides the starting size (for screenshots of long screens).
-fn size() -> [f32; 2] {
-    std::env::var("HONDASCAN_SIZE").ok().and_then(|v| v.split_once('x').and_then(|(w, h)| Some([w.parse().ok()?, h.parse().ok()?]))).unwrap_or([1360.0, 860.0])
-}
-
-fn main() -> eframe::Result<()> {
-    // the window icon: the logo scaled to fit a square, its transparent background kept
-    let logo = image::load_from_memory(include_bytes!("../assets/icon.png")).ok().map(|i| i.to_rgba8());
-    let icon = logo.as_ref().map(|i| {
-        let i = image::imageops::resize(i, 256, (256.0 * i.height() as f32 / i.width() as f32) as u32, image::imageops::FilterType::Lanczos3);
-        let mut sq = image::RgbaImage::new(256, 256);
-        image::imageops::overlay(&mut sq, &i, 0, ((256 - i.height()) / 2) as i64);
-        egui::IconData { width: 256, height: 256, rgba: sq.into_raw() }
-    });
-    let mut vp = egui::ViewportBuilder::default()
-        .with_title("hondascan").with_decorations(false).with_transparent(true)
-        .with_inner_size(size()).with_min_inner_size([1024.0, 680.0]);
-    if let Some(i) = icon { vp = vp.with_icon(i); }
-    eframe::run_native("hondascan", eframe::NativeOptions { viewport: vp, multisampling: std::env::var("HONDASCAN_MSAA").ok().and_then(|v| v.parse().ok()).unwrap_or(4), ..Default::default() }, Box::new(move |cc| Ok(Box::new(app::App::new(cc)))))
+fn main() {
+    bundled::relaunch_on_bundled_qt(); // before any Qt code: a packaged install runs on its own Qt
+    // Greyscale glyphs: Qt takes RGB subpixel antialiasing from the desktop (GNOME's XSettings) even where the desktop itself draws
+    // greyscale, and the coloured fringes read as blur on the black panes. A value the person set wins.
+    if std::env::var_os("QT_SUBPIXEL_AA_TYPE").is_none() {
+        std::env::set_var("QT_SUBPIXEL_AA_TYPE", "NONE");
+    }
+    let mut app = QGuiApplication::new();
+    let mut engine = QQmlApplicationEngine::new();
+    if let Some(engine) = engine.as_mut() {
+        engine.load(&QUrl::from("qrc:/qt/qml/com/hondascan/app/qml/Main.qml"));
+    }
+    if let Some(app) = app.as_mut() {
+        app.exec();
+    }
 }

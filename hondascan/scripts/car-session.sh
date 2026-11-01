@@ -37,6 +37,11 @@ echo "output folder: $OUT"; echo "git $(git rev-parse --short HEAD), $(date -Is)
 echo "Checklist: laptop on charger or car engine RUNNING, parked, handbrake on, in P, A/C off, nothing else holding the adapter (GODIAG, Wine, the app)."
 ask "Ready (engine running)?" || exit 1
 
+# ---- Preflight: a real adapter, the owner's VIN, and the engine, VSA/ABS, EPS, SRS and METER answering. The four drives of
+# 2026-10-25 recorded no VSA/ABS or EPS and nothing said so; a failed line here is that, named, before anything is driven.
+step 00-preflight $H --log "$OUT/00-preflight.frames" preflight; cat "$OUT/00-preflight.out"
+[ "$(tail -n 1 "$SUM" | cut -d' ' -f3)" = 0 ] || ask "Preflight has FAIL lines (above). Continue anyway?" || exit 1
+
 # ---- Phase A: engine running, parked --------------------------------------------------------------------
 step 01-scan $H --log "$OUT/01-scan.frames" scan
 PCM=$(awk '/CANFI/{print $1; exit}' "$OUT/01-scan.out"); PCM=${PCM:-0x0E}

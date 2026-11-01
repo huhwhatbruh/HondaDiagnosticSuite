@@ -103,6 +103,8 @@ pub struct Recorder {
     pub sid: i64,
     prev_codes: Option<BTreeSet<CodeKey>>, // None: first session of this car
     scan_s: f64,
+    /// Who answered the scan's all-ECU wakeup (None: none was sent); shown in the summary only when set.
+    pub wakeup: Option<Vec<u32>>,
     pub trip: Trip,
     pub maps: Maps,
     pub alerts: Alerts,
@@ -152,7 +154,7 @@ impl Recorder {
         let prior = store.prior_maps(vin, sid, 30);
         let maps = limits.map_or_else(|| Maps::new(&prior), |(warm, min_cell)| Maps::with_limits(&prior, warm, min_cell));
         let r = Recorder {
-            store, capture, vin: vin.into(), adapter: adapter.into(), ecus, t0, journal, sid, prev_codes, scan_s,
+            store, capture, vin: vin.into(), adapter: adapter.into(), ecus, t0, journal, sid, prev_codes, scan_s, wakeup: None,
             trip: Trip::new(), maps, alerts: Alerts::new(), stats: vec![], last_sample: HashMap::new(),
             codes: vec![], selftests: SelfTests::default(), first_read: HashSet::new(), appeared: vec![], gone: vec![], cleared: vec![],
             reads_ok: 0, reads_failed: 0, rejected: vec![], unanswered: vec![], silence: vec![], latency: vec![],
@@ -407,7 +409,7 @@ impl Recorder {
         let rejected: Map<String, Value> = self.rejected.iter().map(|(k, v)| (k.clone(), json!(v))).collect();
         let unanswered: Map<String, Value> = self.unanswered.iter().map(|(k, v)| (k.clone(), json!(v))).collect();
         let notes = self.notes(&trip);
-        json!({
+        let mut out = json!({
             "id": self.sid, "vin": self.vin, "adapter": self.adapter, "started": self.t0,
             "ended": if reason.is_some() { json!(now()) } else { Value::Null }, "end_reason": reason,
             "duration_s": round_to(now() - self.t0, 1), "scan_s": self.scan_s,
@@ -422,7 +424,21 @@ impl Recorder {
                       "appeared": self.appeared, "gone": self.gone, "cleared": self.cleared},
             "self_tests": self.selftests.summary(),
             "notes": notes, "signals_seen": self.stats.len(),
-        })
+        });
+        if let Some(w) = &self.wakeup {
+            out["wakeup"] = json!(w); // only when sent, so the frozen summaries of earlier sessions stay comparable
+        }
+        let missing = self.missing_core();
+        if !missing.is_empty() {
+            out["missing"] = crate::preflight::missing_json(&missing); // likewise: only when a core system is silent
+        }
+        out
+    }
+
+    /// The systems every CAN Honda has (preflight.rs) that did not answer the scan.
+    pub fn missing_core(&self) -> Vec<(u32, &'static str)> {
+        let got: Vec<(u32, &str)> = self.ecus.iter().map(|e| (e.address, e.system_type.as_str())).collect();
+        crate::preflight::missing_core(&got)
     }
 
     /// Plain hints with their thresholds; they are hondascan's rules of thumb, not Honda's limits.

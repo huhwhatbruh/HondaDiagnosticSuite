@@ -70,12 +70,18 @@ impl Elm327Link {
 impl DiagLink for Elm327Link {
     fn send(&mut self, payload: &[u8]) -> Result<(), LinkError> {
         let (tx, rx) = (self.tx_id, self.rx_id.unwrap_or(0));
-        let r = self.elm.with(|inn| {
-            inn.retrying(&mut |i| {
+        let r = self.elm.with(|inn| loop {
+            let r = inn.retrying(&mut |i| {
                 i.select(tx, rx, true)?;
                 let t = i.timeout * 8.0 + 2.0;
                 exchange(i, tx, Some(rx), payload, t)
-            })
+            });
+            match r {
+                // frames lost or merged between the bus and the host: ask again with the ECU told to space its frames
+                // further apart, until the steps run out
+                Err(e) if is_framing_fault(&e) && inn.slow_flow_control()? => inn.note(&format!("{e}; flow control slowed, asking again")),
+                r => return r,
+            }
         })?;
         self.pending = r;
         Ok(())
@@ -142,9 +148,17 @@ pub fn reassemble(inn: &Inner, rx_id: Option<u32>, text: &str) -> Result<Vec<Vec
         if Some(cid) != rx_id || data.is_empty() {
             continue;
         }
+        // A classic CAN frame carries at most 8 bytes. A longer line is two frames whose separator was lost on the serial
+        // link (a cheap clone's UART); taking it would put the second frame's id bytes into the payload.
+        if data.len() > 8 {
+            return Err(ElmErr::error(format!("{}-byte frame: two frames run together", data.len())));
+        }
         match data[0] >> 4 {
             0 => msgs.push(data[1..data.len().min(1 + (data[0] & 0xF) as usize)].to_vec()),
             1 if data.len() >= 2 => {
+                if data.len() != 8 {
+                    return Err(ElmErr::error(format!("first frame of {} bytes (ISO 15765-2 needs 8)", data.len())));
+                }
                 need = (((data[0] & 0xF) as usize) << 8) | data[1] as usize;
                 cur = Some(data[2..].to_vec());
                 seq = 1;
@@ -159,6 +173,9 @@ pub fn reassemble(inn: &Inner, rx_id: Option<u32>, text: &str) -> Result<Vec<Vec
                     if c.len() >= need {
                         msgs.push(c[..need].to_vec());
                         cur = None;
+                    } else if data.len() != 8 {
+                        // every consecutive frame but the last is full; a short one lost bytes on the way
+                        return Err(ElmErr::error(format!("consecutive frame {} has {} bytes, not 8", data[0] & 0xF, data.len())));
                     }
                     seq = (seq + 1) & 0xF;
                 }
@@ -166,5 +183,14 @@ pub fn reassemble(inn: &Inner, rx_id: Option<u32>, text: &str) -> Result<Vec<Vec
             _ => {}
         }
     }
+    if let Some(c) = cur {
+        return Err(ElmErr::error(format!("reply incomplete: {} of {need} bytes, last frame missing", c.len())));
+    }
     Ok(msgs)
+}
+
+/// A reply that arrived damaged (frames lost or merged), as opposed to no reply, a refusal or an adapter fault: the request
+/// can be asked again, with the ECU told to send its frames more slowly.
+pub fn is_framing_fault(e: &ElmErr) -> bool {
+    matches!(e, ElmErr::Error(m) if m.starts_with("consecutive frame") || m.starts_with("reply incomplete") || m.contains("run together") || m.starts_with("first frame of"))
 }

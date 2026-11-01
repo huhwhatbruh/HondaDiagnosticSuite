@@ -1,6 +1,6 @@
 [package]
 name = "hondascan"
-version = "0.3.1"
+version = "0.4.0"
 description = "Honda diagnostics on Linux, using data decoded from HDS 3.105.12"
 edition = "2021"
 license = "GPL-3.0-or-later"
@@ -30,5 +30,14 @@ strip = true
 panic = "abort"
 debug = 0
 
+[profile.dev]
+debug = "line-tables-only"   # backtraces keep file:line; less to write and link
+
 [profile.dev.package."*"]
 opt-level = 3
+debug = false
+
+# The bundled SQLite amalgamation is one C file: 64 s at -O3 with -g, 20 s at -O1 without (measured 2026-10-30), and the test
+# suite runs the same speed either way (163.2 s vs 163.0 s). It is most of a clean build, so every fresh worktree pays it.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 1

@@ -315,7 +315,8 @@ impl Service {
         let store = self.store()?;
         // Build the recorder first: it re-attaches the capture file (recorder.rs), and if it fails no state that a
         // write reads may have moved -- self.ecus must not point at a scan whose frames are not being recorded.
-        let rec = Recorder::with_map_limits(store, self.capture.clone(), &vin, &self.spec, ecus.clone(), seconds, self.map_limits)?;
+        let mut rec = Recorder::with_map_limits(store, self.capture.clone(), &vin, &self.spec, ecus.clone(), seconds, self.map_limits)?;
+        rec.wakeup = self.hc.as_ref().and_then(|h| h.last_wakeup.clone());
         self.ecus = ecus.clone();
         self.scan_generation += 1;
         if let Some(hc) = self.hc.as_mut() {
@@ -325,7 +326,9 @@ impl Service {
         self.rec = Some(rec);
         self.monitor.reset(&ecus, mono());
         self.ident_queue = ecus.iter().map(|e| e.address).collect::<BTreeSet<_>>().into_iter().collect();
-        Ok(json!({"ecus": ecus.iter().map(EcuInfo::to_json).collect::<Vec<_>>(), "seconds": seconds, "vin": vin, "session": sid, "folder": folder}))
+        let missing = self.rec.as_ref().map(Recorder::missing_core).unwrap_or_default();
+        Ok(json!({"ecus": ecus.iter().map(EcuInfo::to_json).collect::<Vec<_>>(), "seconds": seconds, "vin": vin, "session": sid, "folder": folder,
+                  "simulated": crate::preflight::simulated(&self.spec), "missing": crate::preflight::missing_json(&missing)}))
     }
 
     /// The scan's entry for this address (and system), or a made-up one for an address that was not found.

@@ -16,7 +16,7 @@ code read, then open a [vehicle report](../../issues/new?template=vehicle_report
 
 ## Build and check
 
-You need Rust 1.92 or newer and, for the GODIAG GD101's J2534 mode, a C compiler. The vehicle database is in the repository.
+You need `rustup` (it installs the Rust version pinned in `rust-toolchain.toml`) and, for the GODIAG GD101's J2534 mode, a C compiler. The vehicle database is in the repository.
 
 ```
 cd hondascan
@@ -25,7 +25,7 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 
-Run the same three commands in `hondascan-gui` for changes to the desktop app. The app's front end is under active change, so
+For changes to the desktop app, also run `cargo test` and `cargo clippy --all-targets -- -D warnings` in `hondascan-gui`. The app's front end is under active change, so
 open an issue before a large GUI pull request.
 
 ## Pull requests

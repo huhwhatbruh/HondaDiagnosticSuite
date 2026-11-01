@@ -247,15 +247,25 @@ pub fn interfaces() -> Vec<Iface> {
 /// A UDP socket on the mDNS port that shares it with other listeners.
 fn shared_socket() -> std::io::Result<UdpSocket> {
     unsafe {
+        #[cfg(target_os = "linux")]
         let fd = libc::socket(libc::AF_INET, libc::SOCK_DGRAM | libc::SOCK_CLOEXEC, 0);
+        #[cfg(not(target_os = "linux"))]   // the BSDs and macOS have no SOCK_CLOEXEC: close-on-exec is set after
+        let fd = libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0);
         if fd < 0 {
             return Err(std::io::Error::last_os_error());
         }
+        #[cfg(not(target_os = "linux"))]
+        libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
         let one: libc::c_int = 1;
         for opt in [libc::SO_REUSEADDR, libc::SO_REUSEPORT] {
             libc::setsockopt(fd, libc::SOL_SOCKET, opt, &one as *const _ as *const libc::c_void, std::mem::size_of::<libc::c_int>() as u32);
         }
-        let addr = libc::sockaddr_in { sin_family: libc::AF_INET as u16, sin_port: MDNS_PORT.to_be(), sin_addr: libc::in_addr { s_addr: 0 }, sin_zero: [0; 8] };
+        // zeroed, then filled in: the BSDs and macOS have a sin_len field and a one-byte family
+        let mut addr: libc::sockaddr_in = std::mem::zeroed();
+        addr.sin_family = libc::AF_INET as _;
+        addr.sin_port = MDNS_PORT.to_be();
+        #[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
+        { addr.sin_len = std::mem::size_of::<libc::sockaddr_in>() as u8; }
         if libc::bind(fd, &addr as *const _ as *const libc::sockaddr, std::mem::size_of::<libc::sockaddr_in>() as u32) != 0 {
             let e = std::io::Error::last_os_error();
             libc::close(fd);

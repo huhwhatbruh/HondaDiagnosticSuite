@@ -1,9 +1,10 @@
 //! The shapes of what the backend sends (hondascan/src/rpc.rs, service.rs), parsed leniently: a field the
 //! backend does not send is its default, never an error.
-use serde::Deserialize;
+#![allow(dead_code)] // the shapes of replies that screens still to come parse (trip, maps, maintenance, actuator, writes)
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Ecu { pub address: u32, pub system_type: String, pub system: String, pub display: String, pub rule: String }
 
@@ -12,7 +13,7 @@ impl Ecu {
     pub fn key(&self) -> String { format!("{}:{}", self.address, if self.system.is_empty() { &self.system_type } else { &self.system }) }
 }
 
-#[derive(Deserialize, Clone, Default, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
 #[serde(default)]
 pub struct Dtc { pub code: String, pub failure_type: i32, pub status: u32, pub kind: String, pub flags: Vec<String>,
     pub honda_code: String, pub description: String, pub help: String }
@@ -28,20 +29,20 @@ pub fn code_with_type(code: &str, failure_type: i32) -> String {
     if failure_type <= 0 { code.to_string() } else { format!("{code}-{failure_type:02X}") }
 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
 pub struct DtcReply { pub available: u32, pub dtcs: Vec<Dtc>, pub incomplete: Vec<Dtc> }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct SignalDef { pub symbol: String, pub description: String, pub unit: String, pub states: Option<Vec<String>>,
     pub help: Option<String>, pub invalid_stopped: bool }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct DidDef { pub did: u32, pub signals: Vec<SignalDef> }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Catalog { pub system: String, pub dids: Vec<DidDef>, pub freeze: Vec<DidDef>, pub readiness: Vec<DidDef> }
 
@@ -52,64 +53,64 @@ impl Catalog {
     }
 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
 pub struct DidValues { pub did: u32, pub values: Option<Vec<Value>>, pub error: Option<String> }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
 pub struct LivePacket { pub t: f64, pub dids: Vec<DidValues> }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Alert { pub id: String, pub level: String, pub title: String, pub text: String }
 
 impl Alert { pub fn fault(&self) -> bool { self.level == "fault" } }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct MinMax { pub min: f64, pub mean: f64, pub max: f64 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Economy { pub km_per_l: f64, pub l_per_100km: f64, pub mpg_us: f64 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Fuel { pub engine_counter_l: Option<f64>, pub maf_estimate_l: Option<f64>, pub economy: Option<Economy> }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Times { pub engine: f64, pub idle: f64 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Trip { pub duration_s: f64, pub distance_km: f64, pub times_s: Times, pub engine_run_s: Option<f64>, pub fuel: Fuel,
     pub lateral_g: Option<MinMax>, pub brake_pressure_bar: Option<MinMax> }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct MapSignal { pub name: String, pub unit: String, pub samples: u32, pub cells: Vec<[f64; 6]> }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Maps { pub rpm: Vec<f64>, pub load: Vec<f64>, pub min_cell: u32, pub signals: std::collections::BTreeMap<String, MapSignal>, pub baseline: MapBaseline }
 
 /// This car's own history for the maps (hondascan mapbaseline.py): how many earlier sessions there are, and for every current cell
 /// that could be compared [rpm bin, load bin, sessions, earlier mean, spread, z]; `cylinders` is the same for each cylinder's whole-session mean.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct MapBaseline { pub sessions: u32, pub min_sessions: u32, pub z: f64, pub rule: String, pub cells: std::collections::BTreeMap<String, Vec<[f64; 6]>>, pub cylinders: Vec<CylBase> }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct CylBase { pub signal: String, pub cylinder: u32, pub now: f64, pub sessions: u32, pub mean: f64, pub sd: f64, pub z: f64 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Reads { pub ok: u32, pub failed: u32 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Status {
     pub connected: bool, pub adapter: String, pub vin: Option<String>, pub asleep: bool, pub recording: bool,
@@ -120,22 +121,22 @@ pub struct Status {
 }
 
 /// One system's self-tests (selftests.py summary): how many were waiting at the first read, how many now, and which.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct SelfTestSys { pub at_start: u32, pub now: u32, pub completed: Vec<SelfTestItem>, pub incomplete: Vec<SelfTestItem> }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct SelfTestItem { pub code: String, pub failure_type: i32, pub description: String }
 
 /// A bi-directional test the backend offers (actuator.py TESTS): what it drives, the values HDS sends, what must hold, its time limit.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct ActTest { pub key: String, pub system: String, pub name: String, pub did: u32, pub values: Vec<i64>, pub conditions: Vec<String>,
     pub hold_s: f64, pub source: String, pub state: Vec<String> }
 
 /// The running test (actuatorrun.py status): `active` is false once control is back with the ECU, `reason` says why it ended.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct ActStatus { pub test: String, pub name: String, pub active: bool, pub value: i64, pub elapsed: Option<f64>, pub remaining: Option<f64>,
     pub reason: String, pub errors: Vec<String> }
@@ -143,7 +144,7 @@ pub struct ActStatus { pub test: String, pub name: String, pub active: bool, pub
 /// A write function the backend offers (write.rs WRITES): the exact requests, the read-back and HDS's own conditions.
 /// `stop` is empty when HDS's procedure sends none (CVT_ISL); `poll_ms` > 0 means HDS polls the read-back instead of
 /// waiting a fixed time.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct WriteFn { pub key: String, pub system: String, pub name: String, pub start: String, pub stop: String,
     pub kind: String, pub did: u32, pub byte: usize, pub mask: u32, pub monitor: String, pub wait_s: f64, pub poll_ms: u64, pub timeout_s: f64,
@@ -153,30 +154,38 @@ pub struct WriteFn { pub key: String, pub system: String, pub name: String, pub 
 /// `*_value` fields carry HDS's status code for a DID-poll write (SLPLMOD/SLPLERR). A routine-status proof (the
 /// meter's reset) carries `kind` = "routine_status" with HDS's pending status in `pending` and the final status byte
 /// in `new_value`.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct WriteResult { pub write: String, pub name: String, pub ok: bool, pub kind: String, pub pending: Option<u32>,
     pub old: Option<bool>, pub new: Option<bool>,
     pub old_value: Option<u32>, pub new_value: Option<u32>, pub error_value: Option<u32>, pub poll_ms: u64,
     pub timeout_s: f64, pub errors: Vec<String> }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
-pub struct ScanResult { pub ecus: Vec<Ecu>, pub seconds: f64, pub vin: String, pub session: u32, pub folder: String }
+pub struct ScanResult { pub ecus: Vec<Ecu>, pub seconds: f64, pub vin: String, pub session: u32, pub folder: String,
+    /// The adapter is a simulated car (`sim`, `sim:...`).
+    pub simulated: bool,
+    /// Systems every CAN Honda has that did not answer (preflight.rs `CORE`).
+    pub missing: Vec<MissingSystem> }
+
+#[derive(Serialize, Deserialize, Default, Debug)]
+#[serde(default)]
+pub struct MissingSystem { pub address: u32, pub name: String }
 
 /// What the backend did when it took control back on `connect` (rpc.rs recover): `pending` is true when a write or test
 /// was still recorded as in flight, `handed_back` when the requests that end it went out, `error` when they did not.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Recovery { pub pending: bool, pub handed_back: bool, pub actions: Vec<String>, pub error: Option<String> }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
 pub struct Connected { pub adapter: String, pub description: String, pub warning: Option<String>, pub recovery: Option<Recovery> }
 
 /// The in-flight write or bi-directional test recorded in `audit/pending.json` when the last backend process died
 /// (rpc.rs pending_recovery): what it was, so the app can say why control is being handed back.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Pending {
     pub schema: u32, pub at: f64, pub pid: u32, pub kind: String, pub vin: String, pub vin_address: u32,
@@ -184,63 +193,63 @@ pub struct Pending {
     pub key: Option<String>, pub test: Option<String>,
 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
 pub struct Hello { pub autoconnect: Option<String>, pub data_dir: String, pub version: String, pub audit: String, pub pending_recovery: Option<Pending> }
 
 /// One line of the installation check (selfcheck.rs): ok, warn or fail, with what was found.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Check { pub id: String, pub title: String, pub status: String, pub detail: String }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 #[serde(default)]
 pub struct SelfCheck { pub ok: bool, pub version: String, pub data_dir: String, pub checks: Vec<Check> }
 
 /// One frozen baseline as the maintenance list names it (no systems: the full payload is `latest`).
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct BaselineMeta { pub id: i64, pub created: f64, pub label: String, pub healthy: bool, pub sha256: String,
     pub integrity: String, pub systems_count: u32 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct ReadinessSignal { pub symbol: String, pub value: Option<f64>, pub unit: String, pub state: Option<String> }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct ReadinessGroup { pub did: u32, pub signals: Vec<ReadinessSignal> }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct BaselineSystem { pub address: u32, pub system: String, pub system_type: String, pub display: String,
     pub answered: bool, pub available: u32, pub dtcs: Vec<Dtc>, pub incomplete: Vec<Dtc>, pub readiness: Vec<ReadinessGroup> }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct BaselineTotals { pub systems: u32, pub faults: u32, pub pending: u32, pub stored: u32, pub incomplete: u32 }
 
 /// The immutable healthy-baseline payload `baseline_freeze` stores: what the car reported at that moment. `session` is
 /// absent when the baseline was frozen without one, `readiness` empty where the catalog has no OBD status groups.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Baseline { pub id: i64, pub schema: u32, pub vin: String, pub created: f64, pub label: String,
     pub session: Option<u32>, pub adapter: String, pub healthy: bool, pub systems: Vec<BaselineSystem>, pub totals: BaselineTotals }
 
 /// A service marker: work done between sessions, with an optional odometer reading (kilometres, as stored).
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Marker { pub id: i64, pub at: f64, pub kind: String, pub note: String, pub mileage_km: Option<f64>, pub created: f64 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
 pub struct Maintenance { pub vin: String, pub baselines: Vec<BaselineMeta>, pub latest: Option<Baseline>, pub markers: Vec<Marker> }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
 pub struct FreezeReply { pub baseline: Option<Baseline>, pub frozen: bool }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 #[serde(default)]
 pub struct ReportReply { pub path: String, pub json_path: String, pub verdict: String, pub summary: String, pub report: Value }
 
@@ -251,18 +260,18 @@ impl ReportReply {
     }
 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 #[serde(default)]
 pub struct ExportReply { pub json_path: String, pub backup_path: String, pub sessions: u32, pub vehicles: u32, pub bytes: u64 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
 pub struct AuditReply { pub path: String, pub records: Vec<Value> }
 
 /// A decoded signal's value as a number, when it is one.
 pub fn num(v: &Value) -> Option<f64> { v.as_f64() }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct EcuInfo { pub ecu_id: Option<String>, pub ecu_model: Option<String>, pub part_number: Option<String>, pub part_number_raw: Option<String> }
 
@@ -278,7 +287,7 @@ pub fn strip_nulls(v: Value) -> Value {
 
 pub fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, serde_json::Error> { serde_json::from_value(strip_nulls(v)) }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
 pub struct Port { pub device: String, pub product: String, pub gd101: bool }
 

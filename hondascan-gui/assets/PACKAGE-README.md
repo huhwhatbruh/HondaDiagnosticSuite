@@ -12,18 +12,20 @@ Project page, wiki and issue tracker: https://github.com/huhwhatbruh/HondaDiagno
 | `hondascan-gui` | The desktop app (`.exe` on Windows, as are the next two) |
 | `hondascan-rpc` | Its backend. Keep it next to the app |
 | `hondascan` | The command-line tool |
+| `lib/`, `qml/`, `plugins/`, `qt.conf` | The Qt the app is built on (Linux). Keep them next to the app |
 | `data/`, `drivers/` | What the program needs. Keep them next to the executables |
 | `60-hondascan.rules` | Linux only: udev rule for USB adapters (below) |
 | `SHA256SUMS`, `manifest.json`, `VERSION` | Checksums and version of every file here |
-| `OFL-Noto.txt` | Licence of the app's font |
+| `OFL-Noto.txt` | Licence of the app's font (the fonts are inside the app) |
 
 ## Set-up
 
-Nothing else needs installing for the program itself: no Python, no Rust, no Wine.
+Nothing else needs installing for the program itself: no Python, no Rust, no Wine, no Qt.
 
 **Linux**
 
-- **A desktop with OpenGL and X11 or Wayland** for the app window. The command-line tool needs none of it.
+- **A desktop with OpenGL and X11 or Wayland** for the app window (its Qt comes with it, in `lib/`; the graphics and desktop
+  libraries are your system's own). The command-line tool needs none of it.
 - **USB adapters (GODIAG GD101 and others):**
   `sudo cp 60-hondascan.rules /etc/udev/rules.d/ && sudo udevadm control --reload`, then replug the adapter. Without it
   ModemManager can grab the adapter.

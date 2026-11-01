@@ -16,6 +16,10 @@ use std::time::{Duration, Instant};
 pub const BAUDS: [u32; 8] = [38400, 115200, 500000, 230400, 57600, 9600, 2000000, 1000000];
 pub const RETRIES: usize = 3; // asks / setups per request before giving up
 pub const DRAIN_S: f64 = 0.5; // unsolicited output for longer than this: still monitoring
+/// STmin byte (ms) of the flow-control frame, per step. Step 0 is HDS's `30 00 00` (README "Wire layer"); the later ones are
+/// for a clone that drops back-to-back frames (issue 9: an ELM327 v1.5 clone lost 1-2 consecutive frames of most 57-byte
+/// replies at STmin 0). Whether they cure it on that adapter is unconfirmed.
+pub const FC_STMIN: [u8; 4] = [0, 5, 10, 20];
 pub const MAX_RESETS: u32 = 12; // per session: an adapter that keeps rebooting is a power fault
 const BANNERS: [&str; 2] = ["ELM", "STN"];
 pub const DEFAULT_PRIORITY: u32 = 0x18; // the ELM327's 29-bit priority after ATZ / ATD (ATCP default)
@@ -108,6 +112,9 @@ pub struct Inner {
     priority: u32,
     pub ident: String,
     pub hds_flow_control: bool,
+    /// Index into FC_STMIN: the separation time asked of the ECU between consecutive frames. Raised when a reply arrives
+    /// damaged, kept for the session (also across an adapter reset).
+    fc_step: usize,
     /// Some: the K-line instead of CAN
     pub kline: Option<KLineState>,
 }
@@ -134,7 +141,7 @@ impl Elm327 {
         }
         let mut inn = Inner {
             path: port.into(), log, want_baud: baud, timeout: timeout_ms as f64 / 1000.0, resets: 0, ready: false, port: None, baud: 0, header: None, fc_header: None,
-            custom_header: false, priority: DEFAULT_PRIORITY, ident: String::new(), hds_flow_control: false,
+            custom_header: false, priority: DEFAULT_PRIORITY, ident: String::new(), hds_flow_control: false, fc_step: 0,
             kline: kline.map(|proto| KLineState { proto, addressed: None, started: false }),
         };
         inn.connect(false)?;
@@ -267,11 +274,23 @@ impl Inner {
     /// FCSM1 is refused until FCSH and FCSD are defined, so define them first (FCSH is a placeholder here, set per target in
     /// select()).
     fn setup_hds_flow_control(&mut self) -> Result<bool, ElmErr> {
-        for c in ["ATFCSH18DA00F1", "ATFCSD300000", "ATFCSM1"] {
-            if self.cmd(c, 2.0)?.contains('?') {
+        for c in ["ATFCSH18DA00F1".to_string(), format!("ATFCSD3000{:02X}", FC_STMIN[self.fc_step]), "ATFCSM1".to_string()] {
+            if self.cmd(&c, 2.0)?.contains('?') {
                 self.cmd("ATFCSM0", 2.0)?;
                 return Ok(false);
             }
+        }
+        Ok(true)
+    }
+
+    /// Ask the ECUs for more time between consecutive frames. False when flow control is the adapter's own or the steps are used up.
+    pub fn slow_flow_control(&mut self) -> Result<bool, ElmErr> {
+        if !self.hds_flow_control || self.fc_step + 1 >= FC_STMIN.len() {
+            return Ok(false);
+        }
+        self.fc_step += 1;
+        if self.cmd(&format!("ATFCSD3000{:02X}", FC_STMIN[self.fc_step]), 2.0)?.contains('?') {
+            return Ok(false);
         }
         Ok(true)
     }

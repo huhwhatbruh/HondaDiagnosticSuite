@@ -1,7 +1,7 @@
 //! Read-only probe: what makes the 2015 Accord's ABS (0x28), EPS (0x30) and TPMS (0x26) answer on the DLC?
 //!
 //! README.md "ABS and EPS": physical 3E 00 / 10 03 / 22 4000 to them is silent, only 0x0E, 0x53 and 0x60 answer. This runs the
-//! untried steps in order and, after each, re-asks every address 0x00-0xFF (3E 00 on its own id) and listens passively, so any change
+//! untried steps in order (the first is HDS's own all-ECU wakeup, `test.dll` FUN_10001432) and, after each, re-asks every address 0x00-0xFF (3E 00 on its own id) and listens passively, so any change
 //! shows. Car on, engine running. Only requests inside the read-only allowlist are sent: 3E 00/80, 10 03, 22 <DID> (here C000/C010 to
 //! the gateways, 4000/4800/6000 to the modules).
 //!
@@ -89,6 +89,11 @@ fn steps(p: &mut Probe, adapter: &Arc<dyn Adapter>, out: &mut dyn Write) -> Resu
         return Ok(1);
     }
     let bus = adapter.bus().ok_or("this adapter has no raw CAN bus")?;
+    let _ = writeln!(out, "1a. HDS's all-ECU wakeup: functional 3E 00 on {FUNCTIONAL_ID:08X}, every 18DAF1xx answer collected, then sweep");
+    let all: Vec<u32> = (0..256).map(rx_id).collect();
+    let got = p.ask(FUNCTIONAL_ID, &all, &[0x3E, 0x00], 1.0)?;
+    let _ = writeln!(out, "  answered: {}", if got.is_empty() { "none".to_string() } else { got.keys().map(|rx| format!("{:02X}", rx & 0xFF)).collect::<Vec<_>>().join(" ") });
+    p.report(out, &format!("3E 00 on {FUNCTIONAL_ID:08X}"))?;
     for (fid, name) in [(FUNCTIONAL_ID, "HDS functional"), (OBD_FUNCTIONAL_ID, "OBD functional")] {
         let _ = writeln!(out, "1. functional 3E 80 x10 on {fid:08X} ({name}), 0.3 s apart, then sweep");
         for _ in 0..10 {

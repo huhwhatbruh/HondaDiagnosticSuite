@@ -104,6 +104,10 @@ pub struct SimEcu {
     pub overlay: Option<Overlay>, // values that change over time
     pub offline: bool,        // the ECU stays silent, as with the ignition off
     pub functional: bool,     // answers requests on the functional id 0x18DBEFF1 (unconfirmed for Honda)
+    /// Silent to every request until the first one on 0x18DBEFF1, HDS's all-ECU wakeup (README, "ABS and EPS"): the
+    /// hypothesis for the 2015 Accord's ABS and EPS, which never answered a physical request. Unconfirmed on the car.
+    pub needs_wakeup: bool,
+    awake: bool,
     pub memory: Option<BTreeMap<u64, Vec<u8>>>,
     pub mem_formats: Vec<u8>,
     pub mem_max: u64,
@@ -154,6 +158,8 @@ impl SimEcu {
             overlay: None,
             offline: false,
             functional: true,
+            needs_wakeup: false,
+            awake: false,
             memory: None,
             mem_formats: vec![0x24],
             mem_max: 32,
@@ -585,6 +591,17 @@ impl SimNode {
         }
     }
 
+    /// A request arrived on the functional id; says whether the ECU is awake to answer (or ignore) it.
+    fn hear(&mut self, functional: bool) -> bool {
+        match self {
+            SimNode::Scripted(e) => {
+                e.awake |= functional;
+                e.awake || !e.needs_wakeup
+            }
+            SimNode::Captured(_) => true,
+        }
+    }
+
     pub fn set_offline(&mut self, offline: bool) {
         match self {
             SimNode::Scripted(e) => e.offline = offline,
@@ -866,7 +883,7 @@ fn serve(ecu: Arc<Mutex<SimNode>>, addr: u32, request_id: u32, endpoint: Arc<cra
         }
         let reply = {
             let mut g = ecu.lock().unwrap();
-            if functional && !g.functional() {
+            if !g.hear(functional) || functional && !g.functional() {
                 continue;
             }
             g.handle(&req)

@@ -272,7 +272,7 @@ pub fn gd101_source() -> PathBuf {
     crate::resource("drivers/gd101_j2534.c")
 }
 
-/// The GD101 driver built from gd101_j2534.c with the system C compiler, cached until the source changes.
+/// The GD101 driver: a prebuilt libgd101_j2534.so beside the executable, else built from gd101_j2534.c with the system C compiler and cached until the source changes.
 #[cfg(windows)]
 pub fn gd101_library() -> Result<PathBuf, J2534Error> {
     // the maker's DLL (GODIAG_PT32.dll) registers itself when its driver package is installed
@@ -285,6 +285,11 @@ pub fn gd101_library() -> Result<PathBuf, J2534Error> {
 
 #[cfg(not(windows))]
 pub fn gd101_library() -> Result<PathBuf, J2534Error> {
+    // an image without a C compiler ships the driver built beside the executable
+    let prebuilt = crate::resource("libgd101_j2534.so");
+    if prebuilt.is_file() {
+        return Ok(prebuilt);
+    }
     let src = gd101_source();
     let cache = std::env::var("XDG_CACHE_HOME").ok().filter(|s| !s.is_empty()).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache")).join("hondascan");
     let lib = cache.join("libgd101_j2534.so");

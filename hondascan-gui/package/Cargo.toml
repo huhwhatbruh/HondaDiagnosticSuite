@@ -1,0 +1,16 @@
+[package]
+name = "hondascan-package"
+version = "0.4.0"
+description = "Packages hondascan-gui (the archive) and bakes the car's wire model; kept out of the app crate, whose Qt build script links every binary of its package"
+license = "GPL-3.0-or-later"
+edition = "2021"
+default-run = "package"
+
+[dependencies]
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(hondascan_packaged)"] }

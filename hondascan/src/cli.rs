@@ -9,6 +9,7 @@
 //!   hondascan -a sim scan                         same, against the built-in simulated vehicle
 //!   hondascan ports                               list USB serial adapters (GODIAG GD101 = e327:2534)
 //!   hondascan -a gd101 adapter                    identify the adapter (ELM version, baud, battery voltage)
+//!   hondascan -a gd101-j2534 preflight [--vin VIN]  before a drive: real adapter, the owner's VIN, the engine, VSA/ABS, EPS, SRS, METER answering (exit 1 if not)
 //!   hondascan -a gd101 wakeup                     does one functional 3E 00 reach every system? (vs one per address)
 //!   hondascan -a elm-kline:/dev/ttyUSB0 kwp ecu-id|read|dtc|clear|present|live ADDR [LID] [--system S]   K-line (ISO 14230); never run on a car
 //!   hondascan -a elm-obd:/dev/ttyUSB0 obd scan|dtc|vin|live [PID...]   generic OBD-II on the K-line (cars before ~2008; elm-obd9141: forces ISO 9141-2); never run on a car
@@ -70,6 +71,7 @@ pub enum Cmd {
     Ports,
     Adapter,
     Wakeup,
+    Preflight { vin: Option<String> },
     SelfCheck,
     Export { out: Option<String> },
     Report { out: Option<String> },
@@ -353,6 +355,11 @@ pub fn parse_args(argv: &[String]) -> Result<Args, String> {
             let p = scan_args(rest, &Spec { valued: &["mask"], flags: &[], repeat: &[] })?;
             Cmd::Dtc { systems: p.pos.clone(), mask: p.opt("mask").map(|s| narrowed::<u8>(s, "--mask", "byte (0..=0xFF)", int0)).transpose()?.unwrap_or(0xFF) }
         }
+        "preflight" => {
+            let p = scan_args(rest, &Spec { valued: &["vin"], flags: &[], repeat: &[] })?;
+            no_extra(&p, 0)?;
+            Cmd::Preflight { vin: p.opt("vin").map(String::from) }
+        }
         "health" => {
             let p = scan_args(rest, &none)?;
             no_extra(&p, 0)?;
@@ -524,7 +531,7 @@ fn sleep_interruptible(s: f64) -> bool {
 }
 
 /// The `-h`/`--help` text: the usage line plus the module doc's command summary.
-const HELP: [&str; 25] = [
+const HELP: [&str; 26] = [
     "usage: hondascan [-h] [-a ADAPTER] [--db DB] [--log LOG] [--addresses ADDRESSES] cmd ...",
     "   hondascan -a socketcan:can0 scan              find ECUs (HDS address table + DID rules)",
     "   hondascan -a socketcan:can0 dtc [SYSTEM...]   read DTCs (all found systems by default)",
@@ -535,6 +542,7 @@ const HELP: [&str; 25] = [
     "   hondascan -a sim scan                         same, against the built-in simulated vehicle",
     "   hondascan ports                               list USB serial adapters (GODIAG GD101 = e327:2534)",
     "   hondascan -a gd101 adapter                    identify the adapter (ELM version, baud, battery voltage)",
+    "   hondascan -a gd101-j2534 preflight [--vin VIN]  before a drive: real adapter, the owner's VIN, the engine, VSA/ABS, EPS, SRS, METER answering (exit 1 if not)",
     "   hondascan -a gd101 wakeup                     does one functional 3E 00 reach every system? (vs one per address)",
     "   hondascan -a elm-kline:/dev/ttyUSB0 kwp ecu-id|read|dtc|clear|present|live ADDR [LID] [--system S]   K-line (ISO 14230); never run on a car",
     "   hondascan -a elm-obd:/dev/ttyUSB0 obd scan|dtc|vin|live [PID...]   generic OBD-II on the K-line (cars before ~2008; elm-obd9141: forces ISO 9141-2); never run on a car",
@@ -804,6 +812,7 @@ fn run(a: &Args, db: &Arc<Database>, adapter: &Arc<dyn crate::transport::Adapter
             }
             Ok(0)
         }
+        Cmd::Preflight { vin } => preflight(&mut hc, &a.adapter, &ecus, vin.as_deref(), io),
         Cmd::Dtc { systems, mask } => {
             let targets: Vec<Ecu> = if systems.is_empty() { ecus.clone() } else { systems.iter().map(|s| resolve(&ecus, s)).collect::<R<_>>()? };
             for e in &targets {
@@ -1434,6 +1443,23 @@ fn actuator(hc: &mut HondaCan, db: &Arc<Database>, cmd: &Cmd, addresses: Option<
 
 /// Which ways does the car answer TesterPresent: on HDS's functional id, on the OBD-II functional id, or on each address's own id
 /// (what a scan tries first)? One line each.
+/// The checks of `preflight.rs` against a live scan: the adapter spec, the VIN read from the engine computer first, the
+/// systems that answered. The expected VIN is `--vin`, else the newest one recorded on a real adapter in the data folder.
+fn preflight(hc: &mut HondaCan, adapter: &str, ecus: &[Ecu], vin: Option<&str>, io: &mut Io) -> R<i32> {
+    let mut order: Vec<u32> = ecus.iter().map(|e| e.address).collect::<BTreeSet<_>>().into_iter().collect();
+    order.sort_by_key(|a| !ecus.iter().any(|x| x.address == *a && ENGINE.contains(&x.system_type.as_str())));
+    let read = read_vin(hc, &order)?.unwrap_or_else(|| "UNKNOWN".into());
+    let expected = vin.map(String::from).or_else(|| crate::store::Store::open(None).ok().and_then(|s| s.last_real_vin()));
+    let pairs: Vec<(u32, &str)> = ecus.iter().map(|e| (e.address, e.system_type.as_str())).collect();
+    let checks = crate::preflight::evaluate(adapter, &read, expected.as_deref(), &pairs, hc.last_wakeup.as_deref());
+    for c in &checks {
+        out!(io, "{}  {:24} {}", if c.ok { "ok  " } else { "FAIL" }, c.name, c.detail);
+    }
+    let ok = crate::preflight::passed(&checks);
+    out!(io, "{}", if ok { "READY: this drive will record the whole car" } else { "NOT READY: fix the FAIL lines first, or the drive records less than the whole car" });
+    Ok(if ok { 0 } else { 1 })
+}
+
 fn wakeup(hc: &mut HondaCan, addresses: Option<&[u32]>, io: &mut Io) -> R<i32> {
     let addresses: Vec<u32> = match addresses.filter(|v| !v.is_empty()) {
         Some(a) => a.to_vec(),

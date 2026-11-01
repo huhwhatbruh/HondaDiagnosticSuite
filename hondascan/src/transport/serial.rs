@@ -61,11 +61,20 @@ mod sys {
             57600 => libc::B57600,
             115200 => libc::B115200,
             230400 => libc::B230400,
+            #[cfg(target_os = "linux")]
             460800 => libc::B460800,
+            #[cfg(target_os = "linux")]
             500000 => libc::B500000,
+            #[cfg(target_os = "linux")]
             921600 => libc::B921600,
+            #[cfg(target_os = "linux")]
             1000000 => libc::B1000000,
+            #[cfg(target_os = "linux")]
             2000000 => libc::B2000000,
+            // the BSDs and macOS have no B constants above 230400: there speed_t is the baud rate itself. Not tried on a Mac: macOS may
+            // want the IOSSIOSPEED ioctl for these instead of termios.
+            #[cfg(not(target_os = "linux"))]
+            460800 | 500000 | 921600 | 1000000 | 2000000 => baud as libc::speed_t,
             _ => return None,
         })
     }
@@ -82,7 +91,7 @@ mod sys {
                     let e = io::Error::last_os_error();
                     return Err(if is_busy(&e) { busy() } else { e });
                 }
-                if libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) < 0 || libc::ioctl(fd, libc::TIOCEXCL) < 0 {
+                if libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) < 0 || libc::ioctl(fd, libc::TIOCEXCL as _) < 0 {
                     libc::close(fd);
                     return Err(busy());
                 }
@@ -153,7 +162,7 @@ mod sys {
 
         pub fn close(&self) {
             unsafe {
-                libc::ioctl(self.fd, libc::TIOCNXCL); // the flag outlives us while another fd is open (a pty)
+                libc::ioctl(self.fd, libc::TIOCNXCL as _); // the flag outlives us while another fd is open (a pty)
                 libc::close(self.fd);
             }
         }
