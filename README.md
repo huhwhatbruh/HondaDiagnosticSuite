@@ -7,7 +7,7 @@ HDS is the software Honda dealers use. It only runs on Windows. This does the re
 > **Confirmed on a 2015 Accord (K24W1, CVT) and by other owners on their own cars** (see [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles)). I still need more Hondas:
 > **[open a vehicle report](../../issues/new?template=vehicle_report.md)**
 
-[Download v0.5.0](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.5.0) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
+[Download v0.5.1](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.5.1) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
 
 
 A generic OBD-II reader talks to the emissions computer and knows a few standard codes. A modern Honda carries a dozen or more
@@ -57,9 +57,9 @@ The desktop app `hondascan-gui` wraps the same scanner.
 
 ## Install and build
 
-Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.5.0) has three archives:
-`hondascan-0.5.0-linux-x86_64.tar.gz`, `hondascan-0.5.0-windows-x86_64.zip` (with the desktop app) and
-`hondascan-0.5.0-windows-i686.zip` (command line only, for 32-bit J2534 DLLs). There is nothing to install for the program
+Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.5.1) has three archives:
+`hondascan-0.5.1-linux-x86_64.tar.gz`, `hondascan-0.5.1-windows-x86_64.zip` (with the desktop app) and
+`hondascan-0.5.1-windows-i686.zip` (command line only, for 32-bit J2534 DLLs). There is nothing to install for the program
 itself: no Python, no Rust, no Wine. Which Linux and Windows versions run it, the udev rule, the C compiler the GD101's J2534 mode
 needs and the serial and CAN set-up are on [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started).
 

@@ -3,6 +3,17 @@
 All notable changes to the release. Format after [Keep a Changelog](https://keepachangelog.com/); versions follow
 [Semantic Versioning](https://semver.org/) from 1.0.0 on. Each release's page has the archives and their checksums.
 
+## [0.5.1]
+
+### Fixed
+- **ELM327 adapters: `Could not read: 1902ff: BUFFERFULL`.** Control units with long trouble-code lists (engine, transmission and
+  ABS on a 2021 Civic) overran the adapter's buffer. The request is now asked again with the control unit told to send its frames
+  further apart (up to 40 ms). Not yet tried on a real adapter.
+
+### Added
+- **Engine condition** (command line `condition`, desktop app Health screen): the newest recorded drive is compared with the car's
+  own earlier drives, per operating regime, and unusual readings are listed with the trouble-code reasoning behind them.
+
 ## [0.5.0]
 
 ### Changed
