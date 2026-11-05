@@ -25,6 +25,8 @@ pub mod livedata;
 pub mod localtime;
 pub mod maintenance;
 pub mod mapbaseline;
+pub mod condition;
+pub mod inference;
 pub mod maps;
 pub mod memory;
 pub mod memservice;

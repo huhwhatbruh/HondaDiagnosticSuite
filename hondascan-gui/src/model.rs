@@ -34,6 +34,7 @@ pub mod qobject {
         #[qproperty(QString, car_wires, cxx_name = "carWires")] // the car's wire model: [{strength, path}] (car::wires), set once at start
         #[qproperty(QString, car_body, cxx_name = "carBody")] // the car's outline: {path, a, b, c, d} (car::BODY)
         #[qproperty(QString, maintenance)] // the reference snapshot card (baseline::card_json)
+        #[qproperty(QString, condition)] // the Condition card (condition::card_json)
         #[qproperty(QString, freeze_info, cxx_name = "freezeInfo")] // the save-snapshot dialog's facts (baseline::freeze_info_json)
         #[qproperty(QString, act)] // the running actuator test for the bar under the header (actuator::running_json), "null" when none
         #[qproperty(QString, actuator)] // the open system's tests (actuator::tests_json)
@@ -299,6 +300,7 @@ pub struct AppModelRust {
     car_wires: QString,
     car_body: QString,
     maintenance: QString,
+    condition: QString,
     freeze_info: QString,
     act: QString,
     actuator: QString,
@@ -344,7 +346,7 @@ impl Default for AppModelRust {
         AppModelRust {
             link: 0, scanning: false, vin: QString::default(), adapter: QString::default(), adapters: QString::from("[]"),
             last_adapter: QString::default(), ecus: QString::from("[]"), dtcs: QString::from("{}"), health: QString::from("{}"),
-            engine: QString::from("{}"), glances: QString::from("[]"), glances_live: QString::from("[]"), status: QString::from("{}"), system: QString::from("{}"), system_live: QString::from("{}"), drive: QString::from("{}"), maps: QString::from("{}"), history: QString::from("{}"), selftests: QString::from("null"), selfcheck: QString::from("{}"), car_wires: QString::from("[]"), car_body: QString::from("{}"), maintenance: QString::from("{}"), freeze_info: QString::from("{}"), act: QString::from("null"), actuator: QString::from("{}"), writes: QString::from("{}"), write_running: QString::default(), read_checked: QString::from("{}"), version: QString::default(), backend_error: QString::default(), intro_plan: 0, intro_on: true, intro_sequence: QString::default(),
+            engine: QString::from("{}"), glances: QString::from("[]"), glances_live: QString::from("[]"), status: QString::from("{}"), system: QString::from("{}"), system_live: QString::from("{}"), drive: QString::from("{}"), maps: QString::from("{}"), history: QString::from("{}"), selftests: QString::from("null"), selfcheck: QString::from("{}"), car_wires: QString::from("[]"), car_body: QString::from("{}"), maintenance: QString::from("{}"), condition: QString::from("{}"), freeze_info: QString::from("{}"), act: QString::from("null"), actuator: QString::from("{}"), writes: QString::from("{}"), write_running: QString::default(), read_checked: QString::from("{}"), version: QString::default(), backend_error: QString::default(), intro_plan: 0, intro_on: true, intro_sequence: QString::default(),
             backend: None, settings: None, ecu_list: Vec::new(), dtc_state: HashMap::new(), read_codes: ReadCodes::default(), history_state: History::default(), map_sel: "IG".into(), status_data: None, self_check: None, self_check_err: None, backend_version: String::new(), settings_writable: false, maintenance_data: None, maintenance_err: None, last_report: None, act_tests: Vec::new(), act_status: None, write_fns: Vec::new(), catalogs: HashMap::new(),
             glance_polls: DEFS.iter().map(|_| None).collect(), sysview: None, watching: None, status_at: Instant::now(), status_busy: false,
         }

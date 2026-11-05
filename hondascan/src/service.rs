@@ -124,6 +124,8 @@ pub struct Service {
     pub monitor: Monitor,
     /// Overrides the maps' (warm-engine temperature, samples per cell); tests set it with `set_map_limits`.
     map_limits: Option<(f64, f64)>,
+    /// Tests only: the time stamped on each read, so a scripted drive can run faster than real time (`set_clock`).
+    clock: Option<Arc<dyn Fn() -> f64 + Send + Sync>>,
     store: Option<Arc<Store>>,
     pub adapter: Option<Arc<dyn Adapter>>,
     pub hc: Option<HondaCan>,
@@ -148,7 +150,7 @@ impl Service {
         Service {
             write_cancel: Arc::new(AtomicBool::new(false)),
             help: SignalHelp::new(db.clone()), catalogs: HashMap::new(), monitor: Monitor::new(live.clone()), live, db, emit, store, adapter: None, hc: None, capture: None, rec: None,
-            spec: String::new(), ecus: vec![], vin: None, ident_queue: vec![], prim: HashMap::new(), actuator: None, pending_actuator: None, tests: TESTS.to_vec(), gate: None, scan_generation: 0, map_limits: None,
+            spec: String::new(), ecus: vec![], vin: None, ident_queue: vec![], prim: HashMap::new(), actuator: None, pending_actuator: None, tests: TESTS.to_vec(), gate: None, scan_generation: 0, map_limits: None, clock: None,
         }
     }
 
@@ -165,6 +167,11 @@ impl Service {
     /// Tests only: override the maps' (warm-engine temperature, samples per cell).
     pub fn set_map_limits(&mut self, limits: Option<(f64, f64)>) {
         self.map_limits = limits;
+    }
+
+    /// Tests only: stamp reads with this clock instead of the wall clock.
+    pub fn set_clock(&mut self, clock: Arc<dyn Fn() -> f64 + Send + Sync>) {
+        self.clock = Some(clock);
     }
 
     pub fn store(&mut self) -> Result<Arc<Store>, ServiceError> {
@@ -368,7 +375,7 @@ impl Service {
     }
 
     pub fn read_dids(&mut self, ecu: &EcuInfo, dids: Option<&[i64]>, kind: &str) -> Result<Value, ServiceError> {
-        let t_now = now();
+        let t_now = self.clock.as_ref().map_or_else(now, |c| c());
         let system = ecu.system.clone();
         self.hc()?;
         let list: Vec<i64> = match dids {
@@ -711,6 +718,16 @@ impl Service {
     /// This car's frozen baselines and service markers (maintenance.rs). Reads the store only; it does not touch the car.
     pub fn maintenance(&mut self, vin: &str) -> Result<Value, ServiceError> {
         crate::maintenance::maintenance(self, vin)
+    }
+
+    /// The Condition findings for this car's newest recorded drive (condition.rs). Reads the store only.
+    pub fn condition(&mut self, vin: &str) -> Result<Value, ServiceError> {
+        let vin = vin.trim();
+        if vin.is_empty() || vin.eq_ignore_ascii_case("UNKNOWN") {
+            return Err(ServiceError::value("the condition check needs the car's VIN"));
+        }
+        let store = self.store()?;
+        crate::condition::for_session(&store, Some(vin), None).map_err(ServiceError::value)
     }
 
     /// Freeze the current scan as a healthy baseline, after the gate in maintenance::freeze.

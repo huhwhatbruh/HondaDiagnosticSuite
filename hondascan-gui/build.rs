@@ -13,6 +13,7 @@ fn main() {
                 QmlFile::from("qml/Segmented.qml"),
                 QmlFile::from("qml/Check.qml"),
                 QmlFile::from("qml/Caption.qml"),
+                QmlFile::from("qml/ConditionCard.qml"),
                 QmlFile::from("qml/Chip.qml"),
                 QmlFile::from("qml/Field.qml"),
                 QmlFile::from("qml/Area.qml"),

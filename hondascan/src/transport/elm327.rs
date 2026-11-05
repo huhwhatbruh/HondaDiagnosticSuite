@@ -19,7 +19,7 @@ pub const DRAIN_S: f64 = 0.5; // unsolicited output for longer than this: still 
 /// STmin byte (ms) of the flow-control frame, per step. Step 0 is HDS's `30 00 00` (README "Wire layer"); the later ones are
 /// for a clone that drops back-to-back frames (issue 9: an ELM327 v1.5 clone lost 1-2 consecutive frames of most 57-byte
 /// replies at STmin 0). Whether they cure it on that adapter is unconfirmed.
-pub const FC_STMIN: [u8; 4] = [0, 5, 10, 20];
+pub const FC_STMIN: [u8; 5] = [0, 5, 10, 20, 40];
 pub const MAX_RESETS: u32 = 12; // per session: an adapter that keeps rebooting is a power fault
 const BANNERS: [&str; 2] = ["ELM", "STN"];
 pub const DEFAULT_PRIORITY: u32 = 0x18; // the ELM327's 29-bit priority after ATZ / ATD (ATCP default)

@@ -75,6 +75,7 @@ pub enum Cmd {
     SelfCheck,
     Export { out: Option<String> },
     Report { out: Option<String> },
+    Condition { vin: Option<String>, session: Option<i64>, json: bool },
     Dtc { systems: Vec<String>, mask: u8 },
     Health,
     Clear { system: String, yes: bool },
@@ -346,6 +347,12 @@ pub fn parse_args(argv: &[String]) -> Result<Args, String> {
             no_extra(&p, 0)?;
             Cmd::Export { out: p.opt("out").map(String::from) }
         }
+        "condition" => {
+            let p = scan_args(rest, &Spec { valued: &["vin", "session"], flags: &["json"], repeat: &[] })?;
+            no_extra(&p, 0)?;
+            let session = p.opt("session").map(|s| narrowed::<u32>(s, "--session", "session number", int0)).transpose()?.map(i64::from);
+            Cmd::Condition { vin: p.opt("vin").map(String::from), session, json: p.flag("json") }
+        }
         "report" => {
             let p = scan_args(rest, &Spec { valued: &["out"], flags: &[], repeat: &[] })?;
             no_extra(&p, 0)?;
@@ -574,6 +581,31 @@ fn selfcheck(io: &mut Io) -> i32 {
 
 /// `hondascan export`: the JSON export and the `.tar.gz` backup of the data directory (backup.rs), offline. Prints both
 /// paths; `--out` names the JSON file and the archive sits beside it.
+/// Read-only: the stored statistics of a recorded drive against the car's earlier drives. No adapter is opened.
+fn condition_findings(io: &mut Io, vin: Option<&str>, session: Option<i64>, json: bool) -> i32 {
+    let store = match Store::open(None) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = writeln!(io.err, "error: the history database could not be opened: {e}");
+            return 2;
+        }
+    };
+    match crate::condition::for_session(&store, vin, session) {
+        Ok(r) if json => {
+            out!(io, "{}", crate::value::dumps(&r, crate::value::Json::Spaced));
+            0
+        }
+        Ok(r) => {
+            out!(io, "{}", crate::condition::render(&r).trim_end());
+            0
+        }
+        Err(e) => {
+            let _ = writeln!(io.err, "error: {e}");
+            1
+        }
+    }
+}
+
 fn export(io: &mut Io, out: Option<&str>) -> i32 {
     let store = match Store::open(None) {
         Ok(s) => s,
@@ -678,6 +710,9 @@ pub fn main(argv: &[String], io: &mut Io) -> i32 {
     }
     if let Cmd::Export { out } = &a.cmd {
         return export(io, out.as_deref());
+    }
+    if let Cmd::Condition { vin, session, json } = &a.cmd {
+        return condition_findings(io, vin.as_deref(), *session, *json);
     }
     let db = match Database::open(a.db.as_deref().map(std::path::Path::new)) {
         Ok(d) => Arc::new(d),

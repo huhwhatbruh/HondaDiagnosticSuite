@@ -301,6 +301,12 @@ impl Session {
                 a.done()?;
                 s.maintenance(&vin)?
             }
+            "condition" => {
+                // Read-only: the newest recorded drive of this car with statistics, against its earlier drives (condition.rs).
+                let vin = a.string("vin", "")?;
+                a.done()?;
+                s.condition(&vin)?
+            }
             "baseline_freeze" => {
                 let (vin, label) = (a.string("vin", "")?, a.string("label", "")?);
                 a.done()?;

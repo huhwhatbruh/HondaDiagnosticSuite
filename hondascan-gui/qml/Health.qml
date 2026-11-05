@@ -92,6 +92,8 @@ Panel {
         }
         Rectangle { width: parent.width; height: 1; color: Theme.border }
         BaselineCard { width: parent.width; onFreezeRequested: freeze.open(); onMarkerRequested: marker.open() }
+        Rectangle { width: parent.width; height: 1; color: Theme.border }
+        ConditionCard { width: parent.width }
     }
 
     FreezeDialog { id: freeze }

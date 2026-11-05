@@ -153,7 +153,15 @@ fn advertise(logs: &Logs) {
             }
             Ok(mut child) => {
                 if let Some(mut stdin) = child.stdin.take() {
-                    for cmd in ["power on", "menu advertise", &format!("uuids {SERVICE_UUID}"), "discoverable on", "back", "advertise on"] {
+                    // A box with no screen or keyboard (the Pi) cannot show or confirm a pairing code: HONDASCAN_BLE_AGENT=noinput
+                    // makes this bluetoothctl the default agent with no input/output ("just works"), so the phone's Pair prompt
+                    // succeeds. Off by default: a laptop keeps its own agent, or phone-pair-window.py, which asks the person.
+                    let mut cmds: Vec<String> = Vec::new();
+                    if std::env::var("HONDASCAN_BLE_AGENT").is_ok_and(|v| v == "noinput") {
+                        cmds.extend(["agent NoInputNoOutput", "default-agent", "pairable on"].map(String::from));
+                    }
+                    cmds.extend(["power on", "menu advertise", &format!("uuids {SERVICE_UUID}"), "discoverable on", "back", "advertise on"].map(String::from));
+                    for cmd in cmds {
                         let _ = writeln!(stdin, "{cmd}");
                         let _ = stdin.flush();
                         std::thread::sleep(Duration::from_millis(300));

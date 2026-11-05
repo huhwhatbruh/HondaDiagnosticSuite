@@ -263,6 +263,15 @@ impl Store {
     /// The observed maps (`maps.out()`) saved in this car's earlier sessions' summaries, newest first. Several cars never
     /// mix: an unknown VIN has no history.
     pub fn prior_maps(&self, vin: &str, before: i64, limit: i64) -> Vec<Value> {
+        self.prior_summary_key(vin, before, limit, "maps")
+    }
+
+    /// The Condition statistics (`condition.out()`) saved in this car's earlier sessions, newest first.
+    pub fn prior_condition(&self, vin: &str, before: i64, limit: i64) -> Vec<Value> {
+        self.prior_summary_key(vin, before, limit, "condition")
+    }
+
+    fn prior_summary_key(&self, vin: &str, before: i64, limit: i64, key: &str) -> Vec<Value> {
         if vin.is_empty() || vin == "UNKNOWN" {
             return vec![];
         }
@@ -271,9 +280,22 @@ impl Store {
         let rows: Vec<String> = st.query_map(params![vin, before, limit], |r| r.get(0)).unwrap().filter_map(Result::ok).collect();
         rows.iter()
             .filter_map(|s| serde_json::from_str::<Value>(s).ok())
-            .filter_map(|v| v.get("maps").cloned())
+            .filter_map(|v| v.get(key).cloned())
             .filter(|m| !matches!(m, Value::Null | Value::Bool(false)) && m.as_object().is_none_or(|o| !o.is_empty()))
             .collect()
+    }
+
+    /// (id, vin, `condition` statistics) of one session, or of the car's newest session that has them.
+    pub fn condition_of(&self, vin: Option<&str>, session: Option<i64>) -> Option<(i64, String, Value)> {
+        let con = self.con.lock().unwrap();
+        let (sql, args): (&str, Vec<rusqlite::types::Value>) = match (session, vin) {
+            (Some(id), _) => ("SELECT id, vin, summary FROM sessions WHERE id=?", vec![id.into()]),
+            (None, Some(v)) => ("SELECT id, vin, summary FROM sessions WHERE vin=? AND summary LIKE '%\"condition\"%' ORDER BY id DESC LIMIT 1", vec![v.to_string().into()]),
+            (None, None) => return None,
+        };
+        let (id, vin, summary): (i64, String, Option<String>) = con.query_row(sql, rusqlite::params_from_iter(args), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).ok()?;
+        let c = serde_json::from_str::<Value>(&summary?).ok()?.get("condition").cloned()?;
+        Some((id, vin, c))
     }
 
     /// One row per code: first and last time seen, sessions seen in, last event.

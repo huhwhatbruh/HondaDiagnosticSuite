@@ -6,6 +6,7 @@
 //! stored at most once per SAMPLE_EVERY seconds per data group; snapshots are stored whole.
 use crate::alerts::Alerts;
 use crate::journal::{py, Journal};
+use crate::condition::Condition;
 use crate::maps::Maps;
 use crate::selftests::{Dtc, SelfTests};
 use crate::store::{EcuRow, StatRow, Store};
@@ -107,6 +108,7 @@ pub struct Recorder {
     pub wakeup: Option<Vec<u32>>,
     pub trip: Trip,
     pub maps: Maps,
+    pub condition: Condition,
     pub alerts: Alerts,
     stats: Vec<((String, i64, usize), SigStat)>,
     last_sample: HashMap<(String, i64), f64>,
@@ -155,7 +157,7 @@ impl Recorder {
         let maps = limits.map_or_else(|| Maps::new(&prior), |(warm, min_cell)| Maps::with_limits(&prior, warm, min_cell));
         let r = Recorder {
             store, capture, vin: vin.into(), adapter: adapter.into(), ecus, t0, journal, sid, prev_codes, scan_s, wakeup: None,
-            trip: Trip::new(), maps, alerts: Alerts::new(), stats: vec![], last_sample: HashMap::new(),
+            trip: Trip::new(), maps, condition: Condition::new(), alerts: Alerts::new(), stats: vec![], last_sample: HashMap::new(),
             codes: vec![], selftests: SelfTests::default(), first_read: HashSet::new(), appeared: vec![], gone: vec![], cleared: vec![],
             reads_ok: 0, reads_failed: 0, rejected: vec![], unanswered: vec![], silence: vec![], latency: vec![],
             t_flush: Instant::now(), t_summary: Instant::now(), identified: HashSet::new(),
@@ -195,6 +197,7 @@ impl Recorder {
             if ENGINE.contains(&role) {
                 self.trip.engine(t, &named);
                 self.maps.feed(t, &named);
+                self.condition.feed(t, &named);
                 self.alerts.feed(t, &named);
             } else if role == "HONDA ABS" {
                 self.trip.brakes(t, &named);
@@ -419,6 +422,8 @@ impl Recorder {
             // Rust-only (no Python original to port from): the factory-calibration checks in maps.rs, kept out
             // of "maps" and "notes" above so those two stay byte-for-byte comparable with the frozen fixtures.
             "factory": self.maps.factory_summary(), "factory_notes": self.maps.factory_notes(),
+            // Rust-only too: the Condition layer's per-regime statistics (condition.rs), read back by `condition::evaluate`.
+            "condition": self.condition.out(!self.codes.iter().any(|(_, d)| matches!(d["kind"].as_str(), Some("confirmed" | "pending"))), &present),
             "first_session": first,
             "codes": {"present": present, "new_since_last": new, "resolved_since_last": resolved,
                       "appeared": self.appeared, "gone": self.gone, "cleared": self.cleared},

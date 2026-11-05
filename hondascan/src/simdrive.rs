@@ -138,3 +138,61 @@ impl Drive {
         m
     }
 }
+
+/// Faults the Condition scenario can inject into the engine's reports. Each one is a change to what the simulated PCM
+/// answers on the bus, encoded with HDS's layout and converter for that signal, never a change to the values after decoding.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct Faults {
+    pub misfire_cylinder: Option<u32>, // that cylinder's misfire counter (NMFACYLn) rises every 6 s at idle
+    pub lean_trim: f64,                // added to the long-term trim (KLAFAVE), ratio
+    pub vtc_lag: f64,                  // deg the intake cam angle trails its command while cruising
+    pub stuck_ne: bool,                // engine speed answers one value at idle
+    pub knock: f64,                    // deg of knock retard (KNRTD) while running
+    pub baro_kpa: Option<f64>,         // barometric pressure answered instead of the healthy 99 kPa
+}
+
+/// The Condition scenario: 90 s of warm idle, then 90 s of steady 80 km/h cruise, as a function of virtual time `t` (s).
+/// `seed` varies the healthy noise from drive to drive (deterministic).
+pub const SCENARIO_IDLE_S: f64 = 90.0;
+pub const SCENARIO_S: f64 = 180.0;
+
+fn noise(seed: u64, t: f64, k: u64) -> f64 {
+    let mut x = seed.wrapping_mul(6364136223846793005).wrapping_add((t.floor() as u64 + 1).wrapping_mul(1442695040888963407)).wrapping_add(k.wrapping_mul(0x9e3779b97f4a7c15));
+    x ^= x >> 33;
+    x = x.wrapping_mul(0xff51afd7ed558ccd);
+    x ^= x >> 33;
+    (x % 20001) as f64 / 10000.0 - 1.0
+}
+
+/// What the PCM (CANFI) reports at virtual time `t`, as raw bytes per (DID, offset). Offsets and converters: hondascan.db
+/// `can_signal_parts` / `converters` (NE 124 raw*0.25; ECT 2577 raw-40; VSP 2447; BARO 2336 kPa; KLAF/KLAFAVE 2583 raw/128;
+/// KNRTD 2512 raw*0.5; VTC 2514 raw*0.5-20; EXVTC 1272 raw*0.2; NMFACYL 1312 two bytes).
+pub fn scenario_values(t: f64, seed: u64, f: Faults) -> BTreeMap<(u16, usize), Vec<u8>> {
+    let n = |k: u64| noise(seed, t, k);
+    let idle = t < SCENARIO_IDLE_S;
+    let (mut ne, vsp) = if idle { (750.0 + 6.0 * n(1), 0.0) } else { (2400.0 + 15.0 * n(1), 80.0 + 0.4 * n(2)) };
+    if f.stuck_ne && idle {
+        ne = 750.0;
+    }
+    let cmd = if idle { 0.0 } else { 12.0 };
+    let angle = if idle { cmd + 0.3 * n(4) } else { cmd - f.vtc_lag + 0.3 * n(4) };
+    let misfires = f.misfire_cylinder.map_or(0.0, |_| (t.min(SCENARIO_IDLE_S) / 6.0).floor());
+    let mut m = BTreeMap::new();
+    m.insert((0x2610, 6), u(ne / 0.25, 2));
+    m.insert((0x2610, 11), u(90.0 + n(3) + 40.0, 1));
+    m.insert((0x2610, 17), u(f.baro_kpa.unwrap_or(99.0 + 0.2 * n(8)), 1));
+    m.insert((0x2610, 18), u(vsp, 1));
+    m.insert((0x2610, 34), u((if idle { 2.5 } else { 14.0 }) / 0.01, 2));
+    m.insert((0x2611, 10), u((1.0 + 0.012 * n(5)) * 128.0, 1));
+    m.insert((0x2611, 11), u((1.02 + f.lean_trim + 0.004 * n(7)) * 128.0, 1));
+    m.insert((0x2612, 24), u((angle + 20.0) / 0.5, 1));
+    m.insert((0x2662, 8), u((f.knock + if f.knock > 0.0 { 0.2 * n(6).abs() } else { 0.0 }) / 0.5, 1));
+    m.insert((0x2662, 29), u((cmd + 20.0) / 0.5, 1));
+    m.insert((0x266C, 41), u(angle / 0.2, 1));
+    m.insert((0x266C, 42), u(cmd / 0.2, 1));
+    for cyl in 1..=4u32 {
+        let count = if f.misfire_cylinder == Some(cyl) { misfires } else { 0.0 };
+        m.insert((0x2663, 34 + 2 * (cyl as usize - 1)), u(count, 2));
+    }
+    m
+}

@@ -23,6 +23,10 @@ impl qobject::AppModel {
         if vin.is_empty() { return; }
         let again = self.as_mut().rust_mut().history_state.reload_record();
         if !again.is_empty() { self.as_mut().history_calls(again); }
+        self.rpc("condition", json!({ "vin": vin }), |mut m, r| {
+            let card = match &r { Ok(v) => crate::condition::card_json(Some(v), None), Err(e) => crate::condition::card_json(None, Some(e)) };
+            m.as_mut().set_condition(q(&card));
+        });
         self.rpc("maintenance", json!({ "vin": vin }), |mut m, r| {
             match r.and_then(|v| parse::<Maintenance>(v).map_err(|e| format!("unreadable maintenance reply: {e}"))) {
                 Ok(d) => { let mut rm = m.as_mut().rust_mut(); rm.maintenance_data = Some(d); rm.maintenance_err = None; }

@@ -80,6 +80,18 @@ fn the_maps_card_names_the_warm_engine_threshold_the_backend_uses() {
 }
 
 #[test]
+fn the_condition_card_quotes_the_gate_the_backend_uses() {
+    let (warm, hot) = (constant("condition.rs", "WARM_ECT"), constant("condition.rs", "HOT_ECT"));
+    let cruise = constant("condition.rs", "CRUISE_KMH");
+    let line = crate::condition::GATE_LINE;
+    let f = crate::condition::f_of_c;
+    assert!(line.contains(&format!("({:.0} to {:.0} °F)", f(warm), f(hot))), "the gate line must give {warm} and {hot} degC in °F: {line}");
+    assert!(line.contains(&format!("from {:.0} mph", cruise * crate::condition::MPH_PER_KMH)), "the gate line must give {cruise} km/h in mph: {line}");
+    let src = source(BACKEND, "condition.rs");
+    assert!(src.contains("pub const IDLE_RPM: (f64, f64) = (500.0, 1000.0);") && line.contains("500 to 1000 rpm"), "idle range must agree with condition.rs");
+}
+
+#[test]
 fn the_checker_catches_a_banned_phrase() {
     assert!(banned("This is not Honda's stored data").contains(&"Honda's stored"), "the checker must catch a banned phrase");
     assert!(banned("Say what the card shows.").is_empty(), "an ordinary sentence passes");

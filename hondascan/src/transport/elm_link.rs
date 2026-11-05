@@ -189,8 +189,10 @@ pub fn reassemble(inn: &Inner, rx_id: Option<u32>, text: &str) -> Result<Vec<Vec
     Ok(msgs)
 }
 
-/// A reply that arrived damaged (frames lost or merged), as opposed to no reply, a refusal or an adapter fault: the request
-/// can be asked again, with the ECU told to send its frames more slowly.
+/// A reply that arrived damaged (frames lost or merged), or that overran the adapter's buffer (BUFFER FULL: the ECU sent a long
+/// reply, such as a trouble-code list, faster than the serial link could drain it; engine, transmission and ABS of a 2021
+/// Civic over an ELM327, issue report 2026-11-05), as opposed to no reply, a refusal or an adapter fault: the request can be
+/// asked again, with the ECU told to send its frames more slowly.
 pub fn is_framing_fault(e: &ElmErr) -> bool {
-    matches!(e, ElmErr::Error(m) if m.starts_with("consecutive frame") || m.starts_with("reply incomplete") || m.contains("run together") || m.starts_with("first frame of"))
+    matches!(e, ElmErr::Bus(m) if m.starts_with("BUFFERFULL")) || matches!(e, ElmErr::Error(m) if m.starts_with("consecutive frame") || m.starts_with("reply incomplete") || m.contains("run together") || m.starts_with("first frame of"))
 }
