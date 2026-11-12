@@ -5,6 +5,11 @@ All notable changes to the release. Format after [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Removed
+- The program-reflash groundwork added in 0.6.0. It was never wired to a command, and its frames were later found not to
+  match what Honda's own tool sends. hondascan does not reprogram control units: it no longer enters the programming session
+  or sends any program-download service.
+
 ## [0.6.0]
 
 ### Added

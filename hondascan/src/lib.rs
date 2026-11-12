@@ -38,8 +38,6 @@ pub mod phone;
 pub mod preflight;
 pub mod probes;
 pub mod recorder;
-pub mod reflash;
-pub mod reflashrun;
 pub mod report;
 pub mod rpc;
 pub mod seedkey;

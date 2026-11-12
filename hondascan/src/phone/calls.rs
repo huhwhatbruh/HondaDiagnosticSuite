@@ -15,8 +15,7 @@
 //! The backend enforces what HDS enforces (the per-system whitelist, the VIN match, the conditions, the old value read first,
 //! the time limit; actservice.rs, writeservice.rs, service.rs) in the client. Every call carries `expires` (rpc.rs): one the
 //! backend has not reached when the gateway stops waiting is not run. The gateway adds: the
-//! route is fixed, `confirm` must be the JSON boolean `true` in the body (a query string cannot carry it), a `reflash*` write key needs `HONDASCAN_PHONE_REFLASH=1` (none is in
-//! the backend's whitelist today: `write::WRITES` has the learn and meter-maintenance functions), and a test started from the phone is stopped when the phone has been
+//! route is fixed, `confirm` must be the JSON boolean `true` in the body (a query string cannot carry it), and a test started from the phone is stopped when the phone has been
 //! silent for `HANDBACK_AFTER` (the app polls every 0.25-0.5 s, so a dropped link, a closed app or a dead battery hands control
 //! back to the ECU instead of waiting for the test's own time limit).
 use serde_json::{json, Map, Value};
@@ -260,9 +259,6 @@ pub fn call(relay: &Relay, path: &str, method: &str, query: &str, body: &[u8]) -
             Some(v) => params.insert((*name).into(), v),
             None => return Some(text("400 Bad Request", format!("{name} is not valid"))),
         };
-    }
-    if route.method == "write_run" && params["key"].as_str().is_some_and(|k| k.starts_with("reflash")) && std::env::var("HONDASCAN_PHONE_REFLASH").as_deref() != Ok("1") {
-        return Some(text("403 Forbidden", "reflash from the phone is off (HONDASCAN_PHONE_REFLASH=1 turns it on)"));
     }
     if route.confirm {
         if given.get("confirm") != Some(&json!(true)) {

@@ -33,7 +33,6 @@ open an issue before a large GUI pull request.
 Keep one change per pull request, with a message that says what changed and why. There is no automatic CI, so the checks above
 run on your machine; please paste the result of `cargo test` in the description.
 
-## Conduct and security
+## Conduct
 
-Be kind and be specific. See the [code of conduct](CODE_OF_CONDUCT.md). To report a vulnerability, follow [SECURITY.md](SECURITY.md)
-instead of opening a public issue.
+Be kind and be specific.

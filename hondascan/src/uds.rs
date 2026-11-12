@@ -15,7 +15,6 @@
 //! two seed bytes and no type byte, and the key it wants is the ECU's own ROM routine (`seedkey::calc_key_pcm`).
 use crate::actuator::{self, IoPolicy, IO_CONTROL};
 use crate::memory::{self, MemoryPolicy, READ_MEMORY};
-use crate::reflash::{self, FlashTarget, ERASE_BEGIN, ERASE_END, ERASE_ROUTINE, FINISH_ROUTINE, REQUEST_DOWNLOAD, REQUEST_TRANSFER_EXIT, TRANSFER_DATA, WRITE_DID};
 use crate::seedkey;
 use crate::write::{self, WritePolicy, ROUTINE_CONTROL};
 use crate::transport::isotp::{DiagLink, LinkError};
@@ -28,9 +27,6 @@ pub const READ_DTC_INFO: u8 = 0x19;
 pub const READ_DID: u8 = 0x22;
 pub const SECURITY_ACCESS: u8 = 0x27;
 pub const TESTER_PRESENT: u8 = 0x3E;
-/// `31 01 FF 00` / `31 01 FF 01`, reflash's own fixed RoutineControl requests (reflash.rs), outside write.rs's
-/// whitelist of named HDS menu procedures.
-const REFLASH_ROUTINES: [[u8; 4]; 2] = [[ROUTINE_CONTROL, 0x01, (ERASE_ROUTINE >> 8) as u8, ERASE_ROUTINE as u8], [ROUTINE_CONTROL, 0x01, (FINISH_ROUTINE >> 8) as u8, FINISH_ROUTINE as u8]];
 pub const P2: f64 = 0.15; // seconds an ECU gets to answer (ISO 14229 P2; the real value is a live-test item)
 pub const CLEAR_ALL: [u8; 4] = [CLEAR_DTC, 0xFF, 0xFF, 0xFF];
 const REQUEST_SEED: u8 = 0x01;
@@ -41,11 +37,9 @@ const SEND_KEY_2: u8 = 0x04;
 /// Sub-functions a service may carry (None: any), or None for a service that is not allowed at all.
 fn allowed(sid: u8) -> Option<Option<&'static [u8]>> {
     Some(match sid {
-        // Dead for DIAG_SESSION: `check` returns before this lookup for that sid (session 2/programming is gated
-        // there, on `reflash_target`, not here). Left at the plain rule anyway so this table is never read as
-        // claiming 0x02 is unconditionally valid.
-        DIAG_SESSION => Some(&[0x01, 0x03]),
-        CLEAR_DTC | READ_DID | READ_MEMORY | IO_CONTROL | ROUTINE_CONTROL | WRITE_DID | REQUEST_DOWNLOAD | TRANSFER_DATA | REQUEST_TRANSFER_EXIT => None,
+        // DIAG_SESSION is not here: `check` decides session requests itself (01 and 03 only). hondascan never enters
+        // the programming session (02) and has no program download (2E/34/36/37): it does not reprogram an ECU.
+        CLEAR_DTC | READ_DID | READ_MEMORY | IO_CONTROL | ROUTINE_CONTROL => None,
         READ_DTC_INFO => Some(&[0x01, 0x02, 0x04, 0x06, 0x0A]),
         SECURITY_ACCESS => Some(&[REQUEST_SEED, SEND_KEY, REQUEST_SEED_2, SEND_KEY_2]),
         TESTER_PRESENT => Some(&[0x00, 0x80]),
@@ -58,10 +52,9 @@ fn allowed(sid: u8) -> Option<Option<&'static [u8]>> {
 fn echo_len(sid: u8) -> usize {
     match sid {
         DIAG_SESSION | READ_DTC_INFO | SECURITY_ACCESS | TESTER_PRESENT => 1,
-        READ_DID | WRITE_DID => 2,
+        READ_DID => 2,
         IO_CONTROL => 3,       // 2F: the DID and the option
         ROUTINE_CONTROL => 3,  // 31: the sub-function and the routine id
-        TRANSFER_DATA => 1,    // 36: the block sequence counter
         _ => 0,
     }
 }
@@ -196,10 +189,6 @@ pub struct UdsClient {
     pub memory: Option<MemoryPolicy>, // a MemoryPolicy opens service 0x23; None keeps it closed
     pub io: Option<IoPolicy>,         // an IoPolicy opens service 0x2F; None keeps it closed
     pub routine: Option<WritePolicy>, // a WritePolicy opens 0x31; None keeps it closed
-    /// A reflash target opens session `10 02`, `27` without a MemoryPolicy, `2E F1 00/01 01/00`, reflash's own
-    /// `31 01 FF 00`/`FF 01`, and `34`/`36`/`37` (reflash.rs); None keeps all of them closed exactly like the other
-    /// policies above.
-    pub reflash_target: Option<FlashTarget>,
     pub functional: bool,             // requests reach every ECU: a clear would clear them all
     pub late: bool,                   // a request whose answer repeats nothing (0x14, 0x23) went unanswered in time
     /// Why the last `security_access` failed after reaching the ECU. While set, `security_access` refuses to send
@@ -209,18 +198,15 @@ pub struct UdsClient {
 
 impl UdsClient {
     pub fn new(link: Box<dyn DiagLink>) -> UdsClient {
-        UdsClient { link, p2: P2, p2_star: 5.0, allow_clear: false, retries: 1, memory: None, io: None, routine: None, reflash_target: None, functional: false, late: false, security_failed: None }
+        UdsClient { link, p2: P2, p2_star: 5.0, allow_clear: false, retries: 1, memory: None, io: None, routine: None, functional: false, late: false, security_failed: None }
     }
 
     fn check(&self, req: &[u8]) -> Result<(), UdsError> {
         let not = |s: String| Err(UdsError::NotAllowed(s));
         let Some(&sid) = req.first() else { return not("an empty request".into()) };
         if sid == DIAG_SESSION {
-            // Session 2 (programming) is only ever sent for a reflash (README.md "The `10 02`/`34` question,
-            // answered the other way round": this PCM gates 10 02 on a prior successful 27 02, which the fake
-            // enforces; the client only asks for the byte-shape here).
             let sub = req.get(1).copied().unwrap_or(0) & 0x7F;
-            if req.len() != 2 || !(if self.reflash_target.is_some() { [0x01, 0x02, 0x03].contains(&sub) } else { [0x01, 0x03].contains(&sub) }) {
+            if req.len() != 2 || ![0x01, 0x03].contains(&sub) {
                 return not(format!("service 0x{sid:02X} sub-function {} not allowed", hex(&req[1..req.len().min(2)])));
             }
             return Ok(());
@@ -245,8 +231,8 @@ impl UdsClient {
             policy.check(req).map_err(|e| UdsError::NotAllowed(e.0))?;
         }
         if sid == SECURITY_ACCESS {
-            if self.memory.is_none() && self.reflash_target.is_none() {
-                return not("SecurityAccess needs a MemoryPolicy or a reflash target on the client: its only uses here are unlocking a memory read and a reflash's own unlock".into());
+            if self.memory.is_none() {
+                return not("SecurityAccess needs a MemoryPolicy on the client: its only use here is unlocking a memory read".into());
             }
             if self.functional {
                 return not("not sending SecurityAccess on a functional id: every ECU would answer".into());
@@ -263,26 +249,11 @@ impl UdsClient {
             if self.functional {
                 return not("not sending a routine on a functional id: every ECU would run it".into());
             }
-            // reflash's own fixed erase/finish routines (reflash.rs), outside write.rs's named-procedure whitelist.
-            let is_reflash_routine = self.reflash_target.is_some() && req.len() == 4 && REFLASH_ROUTINES.contains(&[req[0], req[1], req[2], req[3]]);
-            if !is_reflash_routine {
-                let Some(policy) = &self.routine else { return not("routine control needs a WritePolicy on the client".into()) };
-                policy.check(req).map_err(|e| UdsError::NotAllowed(e.0))?;
-            }
+            let Some(policy) = &self.routine else { return not("routine control needs a WritePolicy on the client".into()) };
+            policy.check(req).map_err(|e| UdsError::NotAllowed(e.0))?;
         }
         if sid == CLEAR_DTC && self.functional {
             return not("not clearing: requests go to every ECU on this car (functional id), so a clear would clear every system".into());
-        }
-        if matches!(sid, WRITE_DID | REQUEST_DOWNLOAD | TRANSFER_DATA | REQUEST_TRANSFER_EXIT) {
-            let Some(target) = &self.reflash_target else {
-                return not(format!("service 0x{sid:02X} needs a reflash target on the client"));
-            };
-            if self.functional {
-                return not(format!("not sending service 0x{sid:02X} on a functional id: every ECU would act on it"));
-            }
-            // The shape/range checks themselves live in reflash.rs, the same split as memory.rs/actuator.rs for
-            // the other policies above.
-            reflash::check(sid, req, target).map_err(|e| UdsError::NotAllowed(e.0))?;
         }
         Ok(())
     }
@@ -471,49 +442,6 @@ impl UdsClient {
 
     pub fn clear_dtcs(&mut self) -> Result<Vec<u8>, UdsError> {
         self.request(&CLEAR_ALL, Some(self.p2.max(2.0)), None)
-    }
-
-    // -- reflash (reflash.rs) ------------------------------------------------
-    /// `2E F1 00 01` (before the erase routine) or `2E F1 01 00` (after it) -- the exe's own erase-mode markers.
-    pub fn reflash_erase_marker(&mut self, before: bool) -> Result<(), UdsError> {
-        self.request(if before { &ERASE_BEGIN } else { &ERASE_END }, None, None)?;
-        Ok(())
-    }
-
-    /// `31 01 FF 00`: reflash's own erase routine, not an HDS write function (write.rs's whitelist).
-    pub fn reflash_erase(&mut self) -> Result<(), UdsError> {
-        self.request(&REFLASH_ROUTINES[0], Some(self.p2.max(0.2)), Some(0))?;
-        Ok(())
-    }
-
-    /// `31 01 FF 01`: sent once, after every block has been transferred.
-    pub fn reflash_finish(&mut self) -> Result<(), UdsError> {
-        self.request(&REFLASH_ROUTINES[1], Some(self.p2.max(0.2)), Some(0))?;
-        Ok(())
-    }
-
-    /// RequestDownload for one block: returns the ECU's maxNumberOfBlockLength (capped at the target's own bound).
-    pub fn request_download(&mut self, address: u32, size: u32) -> Result<u16, UdsError> {
-        let target = self.reflash_target.ok_or_else(|| UdsError::Other("RequestDownload needs a reflash target on the client".into()))?;
-        let req = reflash::encode_request_download(&target, address, size).map_err(|e| UdsError::NotAllowed(e.0))?;
-        let rsp = self.request(&req, None, None)?;
-        reflash::decode_download_reply(&target, &rsp).map_err(|e| UdsError::Other(e.0))
-    }
-
-    /// TransferData for one chunk (at most the length `request_download` returned).
-    pub fn transfer_data(&mut self, counter: u8, data: &[u8]) -> Result<(), UdsError> {
-        let mut req = Vec::with_capacity(2 + data.len());
-        req.push(TRANSFER_DATA);
-        req.push(counter);
-        req.extend_from_slice(data);
-        self.request(&req, None, None)?;
-        Ok(())
-    }
-
-    /// RequestTransferExit, sent once a block's last TransferData is acknowledged.
-    pub fn request_transfer_exit(&mut self) -> Result<(), UdsError> {
-        self.request(&[REQUEST_TRANSFER_EXIT], None, None)?;
-        Ok(())
     }
 }
 
