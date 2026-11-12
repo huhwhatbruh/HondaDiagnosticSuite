@@ -7,6 +7,7 @@
 //! the car stationary and the conditions HDS checks, and a fake at least as strict as the ECU. Wire form
 //! (hds-xref/tools/actuators.py): `2F <id hi> <id lo> <option> [<value hi> <value lo>]`; option 3 = shortTermAdjustment with a
 //! 16-bit value, option 0 = returnControlToECU. Tests that change stored data are not actuator tests and are not listed.
+use crate::hexfmt::hex;
 use crate::livedata::{Raw, Reading};
 use std::collections::HashMap;
 use std::fmt;
@@ -28,10 +29,6 @@ impl std::error::Error for IoRefused {}
 
 fn refuse<T>(s: String) -> Result<T, IoRefused> {
     Err(IoRefused(s))
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 /// What a condition reads from the live signals: raw equals a number, or the value lies in a range.

@@ -77,6 +77,7 @@
 //! meter refused `22 F1 90` with `7F 22 31`, so the PCM-VIN gate is the one the car accepts. None of these routines
 //! has ever been sent to the car.
 use crate::actuator::condition;
+use crate::hexfmt::hex;
 use std::collections::BTreeSet;
 use std::fmt;
 
@@ -95,10 +96,6 @@ impl std::error::Error for WriteRefused {}
 
 fn refuse<T>(s: String) -> Result<T, WriteRefused> {
     Err(WriteRefused(s))
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 /// The value read and stored before the write, in the DID HDS reads it from. `len` is 1 for a bit/byte field, 2 for a

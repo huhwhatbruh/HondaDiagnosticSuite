@@ -3,13 +3,14 @@
 //!
 //! Nothing leaves the machine unless the person answered Share (the first-launch card, `hondascan share on`): the answer and a
 //! random install id live in `sharing.json` in the data directory. After that a report goes out by itself when a recorded
-//! session has ended and the report differs from the last one sent (at most once a day); `bundle` is the text `preview` shows, so what is
+//! session has ended or a request returned an error (errlog.rs), and the report differs from the last one sent (at most `MAX_PER_DAY` a day); `bundle` is the text `preview` shows, so what is
 //! reviewed is what goes out.
 //!
 //! The report is built from an allow-list, not by scrubbing the history: per car the model part of the VIN (make, descriptor,
 //! model year, plant; never the check digit or the serial), which control units answered with their ids and part numbers,
 //! the trouble codes seen, and per session only how the adapter and the car behaved (which adapter type, how long the scan
-//! took, reads that worked, were refused or went unanswered). Not in it: the VIN, timestamps, driving data (speed, fuel,
+//! took, reads that worked, were refused or went unanswered), and the errors the app's requests returned (errlog.rs: request,
+//! adapter type, error kind and message, how many times; port names removed). Not in it: the VIN, timestamps, driving data (speed, fuel,
 //! maps, drive statistics), notes, the write audit trail, recordings, paths, the Honda database. Sessions on a simulated car
 //! are left out entirely. Every string is still scrubbed of VIN-shaped words, the data directory and the home directory, as a
 //! second line behind the allow-list.
@@ -47,9 +48,17 @@ pub const MAX_BYTES: usize = 32 * 1024;
 /// Newest sessions per car a report carries.
 const MAX_SESSIONS: i64 = 5;
 
-/// Seconds between two sends from one install, however often the report changes: the collector runs on a free plan, and a
-/// report is a summary, not a feed.
-pub const MIN_GAP: f64 = 86400.0;
+/// Reports one install sends in any 24 hours (owner, 2026-11-12: a report after every finished scan, at most five a day). The
+/// collector refuses a sixth in one UTC day for the same install id (worker.js PER_DAY); counting the last 24 hours here is the
+/// stricter of the two, so the app never runs into that refusal. ShareDialog.qml and the wiki's Privacy page say this number;
+/// text_audit.rs checks the dialog against it.
+pub const MAX_PER_DAY: usize = 5;
+
+/// The send times (`sent_at` in sharing.json) of the last 24 hours.
+fn sent_today(saved: &Value) -> Vec<f64> {
+    let t0 = now() - 86400.0;
+    saved["sent_at"].as_array().map(|a| a.iter().filter_map(Value::as_f64).filter(|t| *t > t0).collect()).unwrap_or_default()
+}
 
 fn consent_path(root: &Path) -> PathBuf {
     root.join("sharing.json")
@@ -98,7 +107,7 @@ pub fn status(root: &Path) -> Value {
 pub fn answer(root: &Path, enabled: bool) -> Result<Value, ServiceError> {
     let before = saved(root);
     let doc = if enabled {
-        let keep = before["enabled"].as_bool() == Some(true) && before["install_id"].as_str().is_some_and(|i| !i.is_empty());
+        let keep = before["enabled"].as_bool() == Some(true) && before["install_id"].as_str().is_some_and(|i| !i.is_empty() && usable_id(i));
         if keep {
             let mut d = before.clone();
             d["asked"] = json!(true);
@@ -113,9 +122,26 @@ pub fn answer(root: &Path, enabled: bool) -> Result<Value, ServiceError> {
     Ok(status(root))
 }
 
+/// False for an id with 17 digits in a row: the VIN-shaped pattern (`[A-HJ-NPR-Z0-9]{17}`, upper case, so only the digits of a
+/// lower-case hex id can match) would turn it into `<vin>` here and have the collector refuse every report (worker.js
+/// VIN_SHAPE). About 1 random id in 400 has such a run (live check, 2026-11-12: an all-digit id answered 422).
+pub fn usable_id(id: &str) -> bool {
+    !id.as_bytes().windows(17).any(|w| w.iter().all(u8::is_ascii_digit))
+}
+
+/// 128 random bits as hex, drawn again while `usable_id` says no.
+fn random_id() -> String {
+    loop {
+        let id = draw_id();
+        if usable_id(&id) {
+            return id;
+        }
+    }
+}
+
 /// 128 random bits as hex: the kernel's source where there is one, else the clock, process id and the std hasher's
 /// per-process random keys, hashed. It names an install; it protects nothing.
-fn random_id() -> String {
+fn draw_id() -> String {
     let mut bytes = [0u8; 16];
     if std::fs::File::open("/dev/urandom").and_then(|mut f| std::io::Read::read_exact(&mut f, &mut bytes)).is_ok() {
         return bytes.iter().map(|b| format!("{b:02x}")).collect();
@@ -133,7 +159,7 @@ fn simulated(adapter: &str) -> bool {
 
 /// The adapter's type from the `-a` spec the session recorded (`gd101-j2534:/dev/ttyACM0` -> `gd101-j2534`): never a device
 /// path, a port name or a DLL path.
-fn adapter_kind(spec: &str) -> String {
+pub fn adapter_kind(spec: &str) -> String {
     match spec.split_once(':') {
         Some((head, _)) if head.len() > 1 && head.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') => head.to_string(),
         None if !spec.is_empty() && spec.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') && !spec.to_ascii_uppercase().starts_with("COM") => spec.to_string(),
@@ -220,8 +246,8 @@ fn ecus_of(store: &Store, vin: &str, newest: &Value) -> Vec<Value> {
         .collect()
 }
 
-/// The report for the store at `root`, signed with `install_id`, or None when no session on a real adapter has ended (there is
-/// nothing to say about a car yet).
+/// The report for the store at `root`, signed with `install_id`, or None when no session on a real adapter has ended and no
+/// error is kept (there is nothing to say yet).
 pub fn bundle(store: &Store, root: &Path, install_id: &str) -> Option<Value> {
     let vins: Vec<String> = store.vehicles().iter().filter_map(|v| v["vin"].as_str().map(String::from)).collect();
     let mut cars = vec![];
@@ -236,7 +262,9 @@ pub fn bundle(store: &Store, root: &Path, install_id: &str) -> Option<Value> {
             .collect();
         cars.push(json!({"car": car_of(vin), "ecus": ecus_of(store, vin, newest), "codes": codes, "sessions": sessions.iter().map(session_entry).collect::<Vec<_>>()}));
     }
-    if cars.is_empty() {
+    // what went wrong: errors the app's requests returned, also where no scan ever worked (errlog.rs)
+    let errors = crate::errlog::summary(root);
+    if cars.is_empty() && errors.is_empty() {
         return None;
     }
     let mut doc = json!({
@@ -246,6 +274,7 @@ pub fn bundle(store: &Store, root: &Path, install_id: &str) -> Option<Value> {
         "os": std::env::consts::OS,
         "arch": std::env::consts::ARCH,
         "install_id": install_id,
+        "errors": errors,
         "cars": cars,
     });
     let mut secrets: Vec<(String, &'static str)> = vins.into_iter().map(|v| (v, "<vin>")).collect();
@@ -289,18 +318,65 @@ fn check_endpoint(url: &str) -> Result<(), ServiceError> {
 }
 
 /// The report to send now, when one is due: sharing is on, an endpoint exists, a car has a finished real session, the
-/// report differs from the last one sent, and the last send was at least MIN_GAP ago. Reads only.
+/// report differs from the last one sent, and fewer than MAX_PER_DAY went in the last 24 hours. Reads only.
 pub fn due(store: &Store, root: &Path) -> Option<String> {
     let st = status(root);
     if st["enabled"] != json!(true) || st["can_send"] != json!(true) {
         return None;
     }
     let before = saved(root);
-    if before["last_sent"].as_f64().is_some_and(|t| now() - t < MIN_GAP) {
+    if sent_today(&before).len() >= MAX_PER_DAY {
         return None;
     }
-    let text = render(&bundle(store, root, st["install_id"].as_str()?)?);
-    (before["sent_digest"].as_str() != Some(sha256_hex(text.as_bytes()).as_str())).then_some(text)
+    let doc = bundle(store, root, st["install_id"].as_str()?)?;
+    let sent = |field: &str, k: &String| before[field].as_array().is_some_and(|a| a.iter().any(|x| x.as_str() == Some(k)));
+    let news = error_keys(&doc).iter().any(|k| !sent("sent_errors", k)) || car_keys(&doc).iter().any(|k| !sent("sent_cars", k));
+    news.then(|| render(&doc))
+}
+
+/// Keys already reported that a later report does not need to repeat (the newest `KEEP_KEYS` of each kind are remembered).
+const KEEP_KEYS: usize = 200;
+
+/// What is new in a report is what it is sent for (owner, 2026-11-12: "we want to know when it's wrong"): an error this install
+/// has not reported, or a car that worked on a platform it has not reported. A further scan of a known car on a known platform is
+/// not news. One key per distinct error (without its count, so the same error again is not news).
+fn error_keys(doc: &Value) -> Vec<String> {
+    let f = |e: &Value, k: &str| e[k].as_str().unwrap_or("").to_string();
+    doc["errors"].as_array().map(|a| a.iter().map(|e| [f(e, "method"), f(e, "adapter"), f(e, "kind"), f(e, "message")].join("|")).collect()).unwrap_or_default()
+}
+
+/// One key per car model, operating system and adapter type that has a finished scan in the report: `1HGCR2F3F-linux-elm`
+/// (`unknown` for a car whose VIN was not read). worker.js builds the same key to keep one success per car and platform.
+pub fn car_keys(doc: &Value) -> Vec<String> {
+    let os = doc["os"].as_str().unwrap_or("");
+    let mut out: Vec<String> = vec![];
+    for c in doc["cars"].as_array().into_iter().flatten() {
+        let car = &c["car"];
+        let model = if car["vin_read"] == json!(true) {
+            ["wmi", "vds", "model_year"].iter().map(|k| car[*k].as_str().unwrap_or("")).collect::<String>()
+        } else {
+            "unknown".to_string()
+        };
+        for s in c["sessions"].as_array().into_iter().flatten() {
+            let k = format!("{model}-{os}-{}", s["adapter"].as_str().unwrap_or("other"));
+            if !out.contains(&k) {
+                out.push(k);
+            }
+        }
+    }
+    out
+}
+
+/// `old` with `new` added, the newest `KEEP_KEYS` kept.
+fn remember(old: &Value, new: Vec<String>) -> Value {
+    let mut all: Vec<String> = old.as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
+    for k in new {
+        if !all.contains(&k) {
+            all.push(k);
+        }
+    }
+    let drop = all.len().saturating_sub(KEEP_KEYS);
+    json!(all[drop..])
 }
 
 /// Post `body` to the configured endpoint, if sharing is on, and remember that this exact report went. Returns
@@ -332,7 +408,12 @@ pub fn send(root: &Path, body: &str) -> Result<Value, ServiceError> {
         return Err(ServiceError { kind: "TransportError".into(), message: format!("the upload failed: {why}") });
     }
     let mut doc = saved(root);
-    doc["sent_digest"] = json!(sha256_hex(body.as_bytes()));
+    let sent: Value = serde_json::from_str(body).unwrap_or(Value::Null);
+    doc["sent_errors"] = remember(&doc["sent_errors"], error_keys(&sent));
+    doc["sent_cars"] = remember(&doc["sent_cars"], car_keys(&sent));
+    let mut times = sent_today(&doc);
+    times.push(now());
+    doc["sent_at"] = json!(times);
     doc["last_sent"] = json!(now());
     write_saved(root, &doc)?;
     Ok(json!({"sent": true, "bytes": body.len()}))

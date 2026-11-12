@@ -15,6 +15,8 @@ pub const ERRORS: [&str; 12] = [
 #[derive(Debug, Clone, PartialEq)]
 pub enum ElmErr {
     Error(String),
+    /// A reply that arrived damaged: frames lost, merged or out of sequence (see `is_framing_fault`).
+    Framing(String),
     /// The adapter reported a bus error for this request (not an answer, not an adapter fault).
     Bus(String),
     /// The adapter rebooted (settings lost), vanished or hung; `lost`: reopen the port before setting it up again.
@@ -28,7 +30,7 @@ impl ElmErr {
 
     pub fn message(&self) -> &str {
         match self {
-            ElmErr::Error(m) | ElmErr::Bus(m) => m,
+            ElmErr::Error(m) | ElmErr::Framing(m) | ElmErr::Bus(m) => m,
             ElmErr::Reset { msg, .. } => msg,
         }
     }
@@ -134,7 +136,7 @@ pub fn frames(inn: &Inner, text: &str) -> Result<Vec<(u32, Vec<u8>)>, ElmErr> {
     Ok(out)
 }
 
-fn unhex(s: &str) -> Option<Vec<u8>> {
+pub(super) fn unhex(s: &str) -> Option<Vec<u8>> {
     if !s.len().is_multiple_of(2) || !s.is_ascii() {
         return None;
     }
@@ -151,13 +153,13 @@ pub fn reassemble(inn: &Inner, rx_id: Option<u32>, text: &str) -> Result<Vec<Vec
         // A classic CAN frame carries at most 8 bytes. A longer line is two frames whose separator was lost on the serial
         // link (a cheap clone's UART); taking it would put the second frame's id bytes into the payload.
         if data.len() > 8 {
-            return Err(ElmErr::error(format!("{}-byte frame: two frames run together", data.len())));
+            return Err(ElmErr::Framing(format!("{}-byte frame: two frames run together", data.len())));
         }
         match data[0] >> 4 {
             0 => msgs.push(data[1..data.len().min(1 + (data[0] & 0xF) as usize)].to_vec()),
             1 if data.len() >= 2 => {
                 if data.len() != 8 {
-                    return Err(ElmErr::error(format!("first frame of {} bytes (ISO 15765-2 needs 8)", data.len())));
+                    return Err(ElmErr::Framing(format!("first frame of {} bytes (ISO 15765-2 needs 8)", data.len())));
                 }
                 need = (((data[0] & 0xF) as usize) << 8) | data[1] as usize;
                 cur = Some(data[2..].to_vec());
@@ -167,7 +169,7 @@ pub fn reassemble(inn: &Inner, rx_id: Option<u32>, text: &str) -> Result<Vec<Vec
                 if let Some(c) = cur.as_mut() {
                     // a lost, duplicated or reordered CF would append the wrong bytes: the count must match
                     if data[0] & 0xF != seq {
-                        return Err(ElmErr::error(format!("consecutive frame out of sequence (got {}, want {})", data[0] & 0xF, seq)));
+                        return Err(ElmErr::Framing(format!("consecutive frame out of sequence (got {}, want {})", data[0] & 0xF, seq)));
                     }
                     c.extend(&data[1..]);
                     if c.len() >= need {
@@ -175,7 +177,7 @@ pub fn reassemble(inn: &Inner, rx_id: Option<u32>, text: &str) -> Result<Vec<Vec
                         cur = None;
                     } else if data.len() != 8 {
                         // every consecutive frame but the last is full; a short one lost bytes on the way
-                        return Err(ElmErr::error(format!("consecutive frame {} has {} bytes, not 8", data[0] & 0xF, data.len())));
+                        return Err(ElmErr::Framing(format!("consecutive frame {} has {} bytes, not 8", data[0] & 0xF, data.len())));
                     }
                     seq = (seq + 1) & 0xF;
                 }
@@ -184,7 +186,7 @@ pub fn reassemble(inn: &Inner, rx_id: Option<u32>, text: &str) -> Result<Vec<Vec
         }
     }
     if let Some(c) = cur {
-        return Err(ElmErr::error(format!("reply incomplete: {} of {need} bytes, last frame missing", c.len())));
+        return Err(ElmErr::Framing(format!("reply incomplete: {} of {need} bytes, last frame missing", c.len())));
     }
     Ok(msgs)
 }
@@ -194,5 +196,5 @@ pub fn reassemble(inn: &Inner, rx_id: Option<u32>, text: &str) -> Result<Vec<Vec
 /// Civic over an ELM327, issue report 2026-11-05), as opposed to no reply, a refusal or an adapter fault: the request can be
 /// asked again, with the ECU told to send its frames more slowly.
 pub fn is_framing_fault(e: &ElmErr) -> bool {
-    matches!(e, ElmErr::Bus(m) if m.starts_with("BUFFERFULL")) || matches!(e, ElmErr::Error(m) if m.starts_with("consecutive frame") || m.starts_with("reply incomplete") || m.contains("run together") || m.starts_with("first frame of"))
+    matches!(e, ElmErr::Framing(_)) || matches!(e, ElmErr::Bus(m) if m.starts_with("BUFFERFULL"))
 }

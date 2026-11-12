@@ -10,15 +10,12 @@
 //! key/test that is not in the whitelist is a refusal with the pending file left in place, never a best-effort send.
 use crate::actuator::{IoPolicy, RETURN_CONTROL, TESTS};
 use crate::audit;
+use crate::hexfmt::hex_spaced_upper;
 use crate::honda::HondaCan;
 use crate::ident::{vin_of, VIN_DID};
 use crate::write::{write, WritePolicy};
 use serde_json::{json, Value};
 use std::path::Path;
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02X}")).collect::<Vec<_>>().join(" ")
-}
 
 fn num(v: &Value) -> Option<u32> {
     v.as_u64().and_then(|n| u32::try_from(n).ok())
@@ -27,10 +24,10 @@ fn num(v: &Value) -> Option<u32> {
 /// Send `req` once, retry once on error, and record every attempt and every error. True when a send succeeded.
 fn send(hc: &mut HondaCan, address: u32, req: &[u8], what: &str, actions: &mut Vec<String>, errors: &mut Vec<String>) -> bool {
     for _ in 0..2 {
-        actions.push(hex(req));
+        actions.push(hex_spaced_upper(req));
         match hc.client(address).request(req, None, Some(0)) {
             Ok(_) => return true,
-            Err(e) => errors.push(format!("{what} {}: {e}", hex(req))),
+            Err(e) => errors.push(format!("{what} {}: {e}", hex_spaced_upper(req))),
         }
     }
     false

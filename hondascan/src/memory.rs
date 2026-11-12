@@ -6,6 +6,7 @@
 //! on NRC 0x33 -- the level-1 exchange was confirmed live 2026-10-20, but 2026-10-20 also proved the 0x33 itself is
 //! permanent on a real car (the lock flag is a ROM calibration bit; README.md "Spark inputs" bullet "The `0x23` memory
 //! gate"): no key can open it, so this policy will only ever matter against fakes.
+use crate::hexfmt::hex;
 use std::fmt;
 
 pub const READ_MEMORY: u8 = 0x23;
@@ -29,10 +30,6 @@ impl std::error::Error for MemoryRefused {}
 
 fn refuse<T>(s: String) -> Result<T, MemoryRefused> {
     Err(MemoryRefused(s))
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 pub fn encode(address: u64, length: u64, fmt: u8) -> Result<Vec<u8>, MemoryRefused> {

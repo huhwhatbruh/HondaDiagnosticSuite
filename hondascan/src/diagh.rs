@@ -8,6 +8,7 @@
 //!
 //! Message: [command, length, data..., checksum]. `length` counts every byte of the message; the checksum makes all bytes sum to
 //! 0 modulo 256. Examples from HDS: wake-up `FE 04 91 6D`, stop `AD 04 F1 5E`, keep-awake `A0 05 70 01 EA`.
+use crate::hexfmt::hex;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::time::Instant;
@@ -36,10 +37,6 @@ impl std::error::Error for DiagHError {}
 
 fn err<T>(s: impl Into<String>) -> Result<T, DiagHError> {
     Err(DiagHError::Error(s.into()))
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 pub fn checksum(body: &[u8]) -> u8 {

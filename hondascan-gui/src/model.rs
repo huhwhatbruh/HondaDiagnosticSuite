@@ -826,13 +826,18 @@ impl qobject::AppModel {
             }
             self.rpc("status", json!({}), |m, r| m.on_status(r));
         }
-        let ask_sys = self.as_mut().rust_mut().sysview.as_mut().and_then(|v| v.live.due().map(|d| (v.ecu.clone(), d)));
+        let ask_sys = self.as_mut().rust_mut().sysview.as_mut().and_then(|v| v.live.due(&[]).map(|d| (v.ecu.clone(), d)));
+        // the open screen already reads its groups: a glance of the same ECU (hidden behind it) does not ask for them again
+        let screen = self.rust().sysview.as_ref().map(|v| (v.ecu.address, v.live.dids.clone()));
         if let Some((e, dids)) = ask_sys {
             self.rpc("live", json!({ "address": e.address, "system": e.system, "dids": dids }), |m, r| m.on_system_live(r));
         }
         for idx in 0..DEFS.len() {
             let ask = match self.as_mut().rust_mut().glance_polls.get_mut(idx) {
-                Some(Some(g)) => g.live.due().map(|d| (g.ecu.clone(), d)),
+                Some(Some(g)) => {
+                    let skip = screen.as_ref().filter(|(a, _)| *a == g.ecu.address).map_or(&[][..], |(_, d)| d);
+                    g.live.due(skip).map(|d| (g.ecu.clone(), d))
+                }
                 _ => None,
             };
             if let Some((e, dids)) = ask {

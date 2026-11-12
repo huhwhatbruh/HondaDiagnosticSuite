@@ -1,6 +1,5 @@
 //! The shapes of what the backend sends (hondascan/src/rpc.rs, service.rs), parsed leniently: a field the
 //! backend does not send is its default, never an error.
-#![allow(dead_code)] // the shapes of replies that screens still to come parse (trip, maps, maintenance, actuator, writes)
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -21,7 +20,6 @@ pub struct Dtc { pub code: String, pub failure_type: i32, pub status: u32, pub k
 impl Dtc {
     /// A code with its failure-type byte when it has one: P0420, C1234-49.
     pub fn full(&self) -> String { code_with_type(&self.code, self.failure_type) }
-    pub fn confirmed(&self) -> bool { self.kind == "confirmed" }
 }
 
 /// P0420, or C1234-49 when the failure-type byte is set; 0 or less means none (the backend sends -1 for K-line codes).
@@ -55,7 +53,7 @@ impl Catalog {
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
-pub struct DidValues { pub did: u32, pub values: Option<Vec<Value>>, pub error: Option<String> }
+pub struct DidValues { pub did: u32, pub values: Option<Vec<Value>>, pub error: Option<String>, pub nrc: Option<u8> }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
@@ -64,8 +62,6 @@ pub struct LivePacket { pub t: f64, pub dids: Vec<DidValues> }
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Alert { pub id: String, pub level: String, pub title: String, pub text: String }
-
-impl Alert { pub fn fault(&self) -> bool { self.level == "fault" } }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
@@ -271,10 +267,6 @@ pub struct AuditReply { pub path: String, pub records: Vec<Value> }
 /// A decoded signal's value as a number, when it is one.
 pub fn num(v: &Value) -> Option<f64> { v.as_f64() }
 
-#[derive(Serialize, Deserialize, Clone, Default, Debug)]
-#[serde(default)]
-pub struct EcuInfo { pub ecu_id: Option<String>, pub ecu_model: Option<String>, pub part_number: Option<String>, pub part_number_raw: Option<String> }
-
 /// The backend sends `null` for "no value yet" where a number is expected (a trip with no distance); dropping nulls
 /// first lets every such field take its default instead of failing the whole message.
 pub fn strip_nulls(v: Value) -> Value {
@@ -305,7 +297,7 @@ mod tests {
         assert!(serde_json::from_value::<Status>(json!({"trip": {"distance_km": null}})).is_err(), "what parse() is for");
         let d: DtcReply = parse(json!({"dtcs": [{"code": "C1234", "failure_type": 0x49, "kind": "confirmed", "help": null}]})).unwrap();
         assert_eq!(d.dtcs[0].full(), "C1234-49");
-        assert!(d.dtcs[0].confirmed());
+        assert_eq!(d.dtcs[0].kind, "confirmed");
         let d: DtcReply = parse(json!({"dtcs": [{"code": "P0420", "failure_type": -1}]})).unwrap();
         assert_eq!(d.dtcs[0].full(), "P0420", "the K-line's -1 has no failure type, never -FFFFFFFF");
     }

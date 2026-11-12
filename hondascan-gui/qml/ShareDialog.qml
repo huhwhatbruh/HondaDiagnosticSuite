@@ -16,17 +16,18 @@ Sheet {
 
     contentItem: Column {
         spacing: 10
-        Text { width: parent.width; text: "Share your car’s details?"; wrapMode: Text.WordWrap; color: Theme.foreground; font { family: Theme.sans; pixelSize: 16; weight: Font.DemiBold } }
+        Text { width: parent.width; text: "Help hondascan work on more cars?"; wrapMode: Text.WordWrap; color: Theme.foreground; font { family: Theme.sans; pixelSize: 16; weight: Font.DemiBold } }
         Text {
             width: parent.width; wrapMode: Text.WordWrap; color: Theme.mutedFg; font { family: Theme.sans; pixelSize: 13 }
-            text: "Hondascan can send the project a short summary after you scan a car, so it can see which cars, adapters and control units work. It costs you nothing."
+            text: "When something goes wrong, or a car works with hondascan for the first time, it can send a short report. That is how problems on other cars and computers get found and fixed."
         }
         Text { width: parent.width; text: "What is sent"; color: Theme.foreground; font { family: Theme.sans; pixelSize: 12; weight: Font.DemiBold } }
         Repeater {
             model: [
-                "Model, year and plant of the car, taken from the VIN (never the serial part)",
-                "Which control units answered, with their ids and part numbers",
-                "Trouble codes, and how each scan went: adapter type, reads that worked or were refused",
+                "Errors the app ran into (without your folders or port names)",
+                "The car’s make, model, year and factory (not the full VIN)",
+                "Which control units answered, and their part numbers",
+                "Trouble codes, and how the scan went",
                 "App version and operating system"
             ]
             Row { required property string modelData; spacing: 8
@@ -35,7 +36,7 @@ Sheet {
         }
         Text {
             width: parent.width; wrapMode: Text.WordWrap; color: Theme.mutedFg; font { family: Theme.sans; pixelSize: 12 }
-            text: "The VIN, your address, your name, driving data and recordings stay on this computer. Reports go out about once a day, and only when something changed. Switch it off any time in the sidebar."
+            text: "Your VIN, name, address and driving data stay on this computer. A report goes out only when there is something new, at most five a day, and you can turn it off any time in the sidebar."
         }
         Text {
             visible: AppModel.shareText !== ""
@@ -54,8 +55,8 @@ Sheet {
         Row {
             anchors.right: parent.right
             spacing: 8
-            Button { text: "No thanks"; onClicked: { root.answered = true; AppModel.shareAnswer(false); root.close() } }
             Button { text: "Share"; primary: true; focus: true; onClicked: { root.answered = true; AppModel.shareAnswer(true); root.close() } }
+            Button { text: "No thanks"; onClicked: { root.answered = true; AppModel.shareAnswer(false); root.close() } }
         }
     }
 }

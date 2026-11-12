@@ -141,7 +141,24 @@ impl Session {
         serial_ports().into_iter().map(|(d, v, p, prod)| json!({"device": d, "vid": v, "pid": p, "product": prod, "gd101": (v.as_str(), p.as_str()) == GD101_USB_ID})).collect::<Vec<_>>().into()
     }
 
+    /// One request; an error it returns is also kept for the car report (errlog.rs), with the adapter's kind, never its port.
     pub fn call(&mut self, method: &str, params: &Value) -> Result<Value, ServiceError> {
+        let r = self.handle(method, params);
+        if let Err(e) = &r {
+            let spec = if method == "connect" { params["adapter"].as_str().unwrap_or("").to_string() } else { self.svc.spec.clone() };
+            // the port the person named (`elm:/dev/ttyUSB0`, `elm:COM3`, a DLL path) never goes into the kept message
+            let message = match spec.split_once(':') {
+                Some((_, port)) if !port.is_empty() => e.message.replace(port, "<port>"),
+                _ => e.message.clone(),
+            };
+            if let Ok(root) = self.svc.store().map(|s| s.root.clone()) {
+                crate::errlog::record(&root, method, &crate::share::adapter_kind(&spec), &e.kind, &message);
+            }
+        }
+        r
+    }
+
+    fn handle(&mut self, method: &str, params: &Value) -> Result<Value, ServiceError> {
         let empty = Map::new();
         let p = match params {
             Value::Object(o) => o,

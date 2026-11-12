@@ -99,7 +99,7 @@ fn the_checker_catches_a_banned_phrase() {
 
 #[test]
 fn the_share_card_says_how_often_a_report_goes_out_as_the_backend_does() {
-    let gap = constant("share.rs", "MIN_GAP");
-    assert_eq!(gap, 86400.0, "ShareDialog.qml says a report goes out about once a day; MIN_GAP in hondascan/src/share.rs must stay one day");
-    assert!(source(QML, "ShareDialog.qml").contains("about once a day"), "ShareDialog.qml must say how often reports go out");
+    let per_day = constant("share.rs", "MAX_PER_DAY");
+    assert_eq!(per_day, 5.0, "ShareDialog.qml says at most five a day; change its wording with MAX_PER_DAY in hondascan/src/share.rs");
+    assert!(source(QML, "ShareDialog.qml").contains("only when there is something new, at most five a day"), "ShareDialog.qml must say how often reports go out");
 }

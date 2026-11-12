@@ -11,7 +11,7 @@
 //! headers on, each printed line is one reply frame (header, data, checksum).
 use super::can::CaptureLog;
 use super::elm327::{Elm327, Inner, KProto};
-use super::elm_link::{ElmErr, ERRORS};
+use super::elm_link::{unhex, ElmErr, ERRORS};
 use super::isotp::{DiagLink, LinkError};
 use super::Adapter;
 use crate::kwp::{checksum, parse, KwpLink, TESTER};
@@ -253,13 +253,6 @@ impl ElmKLine {
         });
         frames(&self.elm, &text, &obd_payload)
     }
-}
-
-fn unhex(s: &str) -> Option<Vec<u8>> {
-    if !s.len().is_multiple_of(2) || !s.is_ascii() {
-        return None;
-    }
-    (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok()).collect()
 }
 
 impl KwpLink for KLineLink {

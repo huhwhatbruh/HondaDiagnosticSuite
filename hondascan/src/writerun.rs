@@ -17,6 +17,7 @@
 //!   `7F 22 31`). hondascan's 10 s timeout is a safety bound: HDS's loop has none.
 use crate::actuator::{condition, Condition};
 use crate::actuatorrun::{ConditionFailed, Reader, RunError};
+use crate::hexfmt::hex;
 use crate::honda::HondaCan;
 use crate::ident::{vin_of, VIN_DID};
 use crate::uds::UdsError;
@@ -436,10 +437,6 @@ impl WriteRun {
             "errors": self.errors,
         })
     }
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 /// Sleep `d`, polling `cancel` every 0.1 s or less. False when cancelled.

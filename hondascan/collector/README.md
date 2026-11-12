@@ -1,7 +1,10 @@
 # Collector for the opt-in car report
 
-`worker.js` is a Cloudflare Worker that accepts `POST /ingest` (JSON, at most 64 KiB, schema 1, a 32-hex install id, no
-VIN-shaped string) and writes it to an R2 bucket as `reports/<install id>/<hash of the report>.json`. It has no read route and
+`worker.js` is a Cloudflare Worker that accepts `POST /ingest` (JSON, at most 32 KB, schema 1, a 32-hex install id, no
+VIN-shaped string) and writes it to an R2 bucket as `reports/<install id>.json` (one object per install; a newer report
+replaces the older), at most 5 a day per install (the count is kept in that object's metadata). A report with no errors is kept only for a car
+model, OS and adapter type not seen before: each new one leaves an empty marker `cars/<model>-<os>-<adapter>` (no install id,
+not covered by the 12-month rule), and a later error-free report for a known one is answered 204 and dropped. It has no read route and
 holds no secret, so a copy of the app cannot learn anything from it. It never reads the sender's address, and logging is off
 in `wrangler.toml`. Cloudflare itself carries the connection, as it does for any website it hosts.
 
@@ -29,7 +32,8 @@ Then:
 
 The address cannot be hidden from someone who looks inside a release binary: a program that sends to an address contains it. What
 protects the collector is this folder's code: it keeps only a report of the exact expected shape, has no read route, holds no key,
-and takes at most 5 writes a minute.
+and takes at most 5 reports a day from one install and 5 writes a minute in all.
 
 Read the reports with `wrangler r2 object get` or any S3 client using the bucket's own credentials, which only you hold.
-To delete one person's reports on request, delete the `reports/<their install id>/` prefix.
+To delete one person's report on request, delete the object `reports/<their install id>.json`
+(`wrangler r2 object delete openhonda/reports/<their install id>.json`).

@@ -3,7 +3,24 @@
 All notable changes to the release. Format after [Keep a Changelog](https://keepachangelog.com/); versions follow
 [Semantic Versioning](https://semver.org/) from 1.0.0 on. Each release's page has the archives and their checksums.
 
-## [Unreleased]
+## [0.6.1]
+
+### Added
+- **Opt-in problem report.** The first time the app opens, it asks whether to send a short report when something goes wrong,
+  or when a car works for the first time (at most five a day): the errors the app ran into, the car's make, model and year from
+  the VIN, the control units that answered, trouble codes and how the scan went. Never the VIN, port names, folders, driving
+  data or anything personal. Nothing is sent unless you press Share; change it any time with "Share car details" in the sidebar or
+  `hondascan share on` / `off`, and see the exact report with `hondascan share preview`. Details on the
+  [Privacy](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Privacy) page.
+
+### Changed
+- **Live data with a system screen open is read once, not twice.** The Engine and Transmission cards on the Overview kept
+  polling the same values as the open system screen of that control unit, so the adapter asked for them twice. The cards
+  now leave those to the screen while it is open. On a slow adapter (ELM327) the screen updates faster.
+
+### Fixed
+- **A long session in which a control unit stopped answering kept growing in memory.** The recorder kept one entry per
+  unanswered read; it now keeps a count per value.
 
 ### Removed
 - The program-reflash groundwork added in 0.6.0. It was never wired to a command, and its frames were later found not to

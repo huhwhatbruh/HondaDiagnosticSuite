@@ -14,6 +14,7 @@
 //! offline 2026-10-19 from `test.dll` + A550 ROM; measured on the car 2026-10-20: the PCM's seed reply carries
 //! two seed bytes and no type byte, and the key it wants is the ECU's own ROM routine (`seedkey::calc_key_pcm`).
 use crate::actuator::{self, IoPolicy, IO_CONTROL};
+use crate::hexfmt::{hex, hex_spaced};
 use crate::memory::{self, MemoryPolicy, READ_MEMORY};
 use crate::seedkey;
 use crate::write::{self, WritePolicy, ROUTINE_CONTROL};
@@ -82,6 +83,28 @@ pub fn nrc_name(nrc: u8) -> &'static str {
     }
 }
 
+/// What one reply means for the request `sid` (UDS and KWP2000 share the layout): `echo` is the request bytes after the SID
+/// that a positive response repeats.
+#[derive(Debug, PartialEq)]
+pub enum Answer {
+    /// 7F sid 78 responsePending: the ECU is still working, wait P2* longer
+    Pending,
+    /// 7F sid NRC: refused (0x21 busyRepeatRequest is the caller's to retry or not)
+    Negative(u8),
+    Positive,
+    /// anything else answers an earlier request: skip it
+    Other,
+}
+
+pub fn answer(rsp: &[u8], sid: u8, echo: &[u8]) -> Answer {
+    match rsp {
+        [0x7F, s, 0x78, ..] if *s == sid => Answer::Pending,
+        [0x7F, s, nrc, ..] if *s == sid => Answer::Negative(*nrc),
+        [p, rest @ ..] if *p == sid + 0x40 && rest.starts_with(echo) => Answer::Positive,
+        _ => Answer::Other,
+    }
+}
+
 /// Python's UdsError hierarchy as one enum; `Io` is an OSError from the bus (the adapter went away), which Python lets
 /// through unconverted.
 #[derive(Debug)]
@@ -116,14 +139,6 @@ impl From<String> for UdsError {
     fn from(s: String) -> Self {
         UdsError::Other(s)
     }
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
-}
-
-fn hex_spaced(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect::<Vec<_>>().join(" ")
 }
 
 const STATUS_BITS: [&str; 8] = [
@@ -304,21 +319,16 @@ impl UdsClient {
         loop {
             let left = end.saturating_duration_since(Instant::now()).as_secs_f64();
             let Some(rsp) = self.link.recv(left)? else { return Ok(None) };
-            if rsp.first() == Some(&0x7F) && rsp.len() >= 3 && rsp[1] == sid {
-                if rsp[2] == 0x78 {
-                    end = Instant::now() + crate::transport::can::secs(self.p2_star);
-                    continue;
-                }
-                if rsp[2] == 0x21 && retry_busy {
+            match answer(&rsp, sid, echo) {
+                Answer::Pending => end = Instant::now() + crate::transport::can::secs(self.p2_star),
+                Answer::Negative(0x21) if retry_busy => {
                     std::thread::sleep(Duration::from_millis(200));
                     return Ok(None);
                 }
-                return Err(AwaitError::Uds(UdsError::Negative { sid, nrc: rsp[2] }));
+                Answer::Negative(nrc) => return Err(AwaitError::Uds(UdsError::Negative { sid, nrc })),
+                Answer::Positive => return Ok(Some(rsp)),
+                Answer::Other => {}
             }
-            if rsp.first() == Some(&(sid + 0x40)) && rsp[1..].get(..echo.len()) == Some(echo) {
-                return Ok(Some(rsp));
-            }
-            // anything else answers an earlier request: skip it
         }
     }
 

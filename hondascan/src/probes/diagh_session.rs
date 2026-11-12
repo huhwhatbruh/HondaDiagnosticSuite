@@ -8,13 +8,10 @@
 //!   diagh-session PORT ROW [--log FILE]   (ROW: 1, 2, 3 or 14; row 13 is refused, one command byte there both reads and clears;
 //!                                          --log writes every byte with a timestamp)
 use crate::diagh::{profile, DiagHClient, DiagHError, DiagHLink, HalfDuplexLink, RawLine, PROFILES};
+use crate::hexfmt::hex_spaced_upper;
 use crate::transport::diagh_serial::{SerialLine, BAUD};
 use std::io::Write;
 use std::time::Instant;
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02X}")).collect::<Vec<_>>().join(" ")
-}
 
 /// The session on any link: wake, keep-awake if the row has one, stop. Each step is printed with the bytes sent.
 pub fn session<L: DiagHLink, W: Write>(c: &mut DiagHClient<L>, out: &mut W) -> Result<(), DiagHError> {
@@ -22,23 +19,23 @@ pub fn session<L: DiagHLink, W: Write>(c: &mut DiagHClient<L>, out: &mut W) -> R
     let say = |out: &mut W, s: String| {
         let _ = writeln!(out, "{s}");
     };
-    say(out, format!("row {}: wake-up {}", p.row, hex(p.wake)));
+    say(out, format!("row {}: wake-up {}", p.row, hex_spaced_upper(p.wake)));
     let replies = c.wake()?;
     if replies.is_empty() {
         say(out, "  no reply".into());
     }
     for (cmd, data) in &replies {
-        say(out, format!("  reply command {cmd:02X} data {}", hex(data)));
+        say(out, format!("  reply command {cmd:02X} data {}", hex_spaced_upper(data)));
     }
     if !p.keep_awake.is_empty() {
-        say(out, format!("keep-awake {}", hex(p.keep_awake)));
+        say(out, format!("keep-awake {}", hex_spaced_upper(p.keep_awake)));
         match c.keep_awake()? {
-            Some((cmd, data)) => say(out, format!("  reply command {cmd:02X} data {}", hex(&data))),
+            Some((cmd, data)) => say(out, format!("  reply command {cmd:02X} data {}", hex_spaced_upper(&data))),
             None => say(out, "  no reply".into()),
         }
     }
     if !p.stop.is_empty() {
-        say(out, format!("stop {}", hex(p.stop)));
+        say(out, format!("stop {}", hex_spaced_upper(p.stop)));
     }
     c.stop()
 }
@@ -57,7 +54,7 @@ impl<R: RawLine, W: Write> LoggedLine<R, W> {
     }
 
     fn note(&mut self, dir: &str, bytes: &[u8]) {
-        let _ = writeln!(self.log, "{:.4} {dir} {}", self.t0.elapsed().as_secs_f64(), hex(bytes));
+        let _ = writeln!(self.log, "{:.4} {dir} {}", self.t0.elapsed().as_secs_f64(), hex_spaced_upper(bytes));
         let _ = self.log.flush(); // a hang or a pulled cable must not lose the last bytes
     }
 }

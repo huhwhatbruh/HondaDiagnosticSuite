@@ -410,7 +410,10 @@ impl Service {
                     if let Some(r) = self.rec.as_mut() {
                         r.failed(ecu, did, &e.to_string(), refused);
                     }
-                    out.push(json!({"did": did, "error": e.to_string()}));
+                    // a refusal carries its code as a number too, so a client acts on it without parsing the message
+                    let mut r = json!({"did": did, "error": e.to_string()});
+                    if let UdsError::Negative { nrc, .. } = e { r["nrc"] = json!(nrc); }
+                    out.push(r);
                     continue;
                 }
             };
@@ -852,6 +855,3 @@ impl Service {
         Ok(history::session_detail(&*self.store()?, id)?)
     }
 }
-
-#[allow(dead_code)]
-fn _unused(_: &Service) {}

@@ -3,8 +3,9 @@
 //!
 //! Frame: Fmt [Tgt Src] [Len] data... Checksum. Fmt bits 7-6 select the addressing (00 none, 10 physical, 11 functional), bits
 //! 5-0 the data length (0: a length byte follows). The checksum is the sum of all earlier bytes modulo 256.
+use crate::hexfmt::hex;
 use crate::transport::isotp::LinkError;
-use crate::uds::{sae_code, DtcRecord};
+use crate::uds::{answer, sae_code, Answer, DtcRecord};
 use std::fmt;
 use std::time::{Duration, Instant};
 
@@ -105,10 +106,6 @@ impl KwpError {
 
 fn err<T>(s: impl Into<String>) -> Result<T, KwpError> {
     Err(KwpError::Error(s.into()))
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 pub fn checksum(data: &[u8]) -> u8 {
@@ -257,21 +254,16 @@ impl<L: KwpLink> KwpClient<L> {
             }
             let mut end = Instant::now() + Duration::from_secs_f64(timeout.filter(|t| *t != 0.0).unwrap_or(self.p2));
             while let Some(rsp) = self.link.recv(end.saturating_duration_since(Instant::now()).as_secs_f64()) {
-                if rsp.first() == Some(&0x7F) && rsp.len() >= 3 && rsp[1] == sid {
-                    if rsp[2] == 0x78 {
-                        end = Instant::now() + Duration::from_secs_f64(self.p2_star);
-                        continue;
-                    }
-                    if rsp[2] == 0x21 && attempt < self.retries {
+                match answer(&rsp, sid, echo) {
+                    Answer::Pending => end = Instant::now() + Duration::from_secs_f64(self.p2_star),
+                    Answer::Negative(0x21) if attempt < self.retries => {
                         std::thread::sleep(Duration::from_millis(200));
                         break;
                     }
-                    return Err(KwpError::Negative { sid, nrc: rsp[2] });
+                    Answer::Negative(nrc) => return Err(KwpError::Negative { sid, nrc }),
+                    Answer::Positive => return Ok(rsp),
+                    Answer::Other => {}
                 }
-                if rsp.first() == Some(&(sid + 0x40)) && rsp[1..].get(..echo.len()) == Some(echo) {
-                    return Ok(rsp);
-                }
-                // anything else answers an earlier request: skip it
             }
         }
         Err(KwpError::NoResponse(format!("no response to {}", hex(req))))

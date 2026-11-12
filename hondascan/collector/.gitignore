@@ -1,0 +1,2 @@
+# wrangler's local state (deploy cache, tmp)
+.wrangler/

@@ -2,6 +2,7 @@
 //! 00 01 and 00 02 (sub_27540 / sub_27590), framed as sub_25740: [len/2] payload [crc8 poly 7].
 //!
 //!   gd101-hello [DEVICE]        (default /dev/gd101)
+use crate::hexfmt::hex_spaced;
 use std::io::Write as _;
 use std::os::unix::fs::OpenOptionsExt as _;
 use std::os::fd::AsRawFd;
@@ -50,10 +51,6 @@ pub fn bytes_repr(b: &[u8]) -> String {
     }
     s.push(q);
     s
-}
-
-pub fn hex_spaced(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect::<Vec<_>>().join(" ")
 }
 
 /// The termios2/custom-baud ioctl interface is Linux-specific (the module is only built there, see probes/mod.rs).

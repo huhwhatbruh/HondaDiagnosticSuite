@@ -28,8 +28,9 @@ impl Live {
     pub fn history(&self, did: u32, i: usize) -> Option<&VecDeque<f32>> { self.hist.get(&(did, i)) }
 
     /// The groups to ask for now, or None while a request is in flight or the pause since the last one has not passed.
-    pub fn due(&mut self) -> Option<Vec<u32>> {
-        let ask: Vec<u32> = self.dids.iter().copied().filter(|d| !self.none.contains(d)).collect();
+    /// `skip`: groups another poll of the same ECU already reads (the open system screen), not asked twice.
+    pub fn due(&mut self, skip: &[u32]) -> Option<Vec<u32>> {
+        let ask: Vec<u32> = self.dids.iter().copied().filter(|d| !self.none.contains(d) && !skip.contains(d)).collect();
         if self.asked_at.is_some() || ask.is_empty() || Instant::now() < self.next { return None; }
         self.asked_at = Some(Instant::now());
         Some(ask)
@@ -63,7 +64,7 @@ impl Live {
     fn take(&mut self, p: LivePacket) {
         for d in p.dids {
             if let Some(e) = d.error {
-                if e.contains("NRC 0x31") { self.none.insert(d.did); }
+                if d.nrc == Some(0x31) { self.none.insert(d.did); }
                 self.lose(d.did, e);
                 continue;
             }
@@ -92,7 +93,7 @@ mod tests {
         let mut l = Live::new(vec![0x2610, 0x2694]);
         l.take(packet(json!({"t": 1.0, "dids": [
             {"did": 0x2610, "values": [800, "ON", null]},
-            {"did": 0x2694, "error": "service 0x22: NRC 0x31 requestOutOfRange"}]})));
+            {"did": 0x2694, "error": "service 0x22: NRC 0x31 requestOutOfRange", "nrc": 0x31}]})));
         assert_eq!(l.number(0x2610, 0), Some(800.0));
         assert_eq!(l.value(0x2610, 1), Some(&json!("ON")));
         assert!(l.history(0x2610, 1).is_none(), "text has no history");
@@ -112,12 +113,21 @@ mod tests {
     #[test]
     fn one_request_in_flight_and_a_pause_between() {
         let mut l = Live::new(vec![0x2610]);
-        assert_eq!(l.due(), Some(vec![0x2610]));
-        assert_eq!(l.due(), None, "the first is still in flight");
+        assert_eq!(l.due(&[]), Some(vec![0x2610]));
+        assert_eq!(l.due(&[]), None, "the first is still in flight");
         l.answered(Ok(json!({"dids": [{"did": 0x2610, "values": [1]}]})), Duration::from_secs(60));
-        assert_eq!(l.due(), None, "the pause has not passed");
+        assert_eq!(l.due(&[]), None, "the pause has not passed");
         l.answered(Err("late".into()), Duration::ZERO);
         l.next = Instant::now();
-        assert_eq!(l.due(), Some(vec![0x2610]));
+        assert_eq!(l.due(&[]), Some(vec![0x2610]));
+    }
+
+    #[test]
+    fn groups_another_poll_reads_are_skipped_and_all_skipped_asks_nothing() {
+        let mut l = Live::new(vec![0x2610, 0x2612]);
+        assert_eq!(l.due(&[0x2610]), Some(vec![0x2612]));
+        let mut l = Live::new(vec![0x2610]);
+        assert_eq!(l.due(&[0x2610]), None);
+        assert_eq!(l.due(&[]), Some(vec![0x2610]), "nothing was put in flight by the skipped ask");
     }
 }

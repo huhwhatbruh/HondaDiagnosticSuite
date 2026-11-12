@@ -15,15 +15,12 @@
 use crate::actuator::condition;
 use crate::actuatorrun::{Reader, RunError};
 use crate::audit;
+use crate::hexfmt::hex_spaced_upper;
 use crate::service::{Service, ServiceError};
 use crate::write;
 use crate::writerun::WriteRun;
 use serde_json::{json, Value};
 use std::sync::atomic::Ordering;
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02X}")).collect::<Vec<_>>().join(" ")
-}
 
 fn errors_of(v: &Value) -> Vec<String> {
     v["errors"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default()
@@ -41,10 +38,10 @@ impl Service {
         write::WRITES
             .iter()
             .map(|w| {
-                json!({"key": w.key, "system": w.system, "name": w.name, "start": hex(w.start), "stop": w.stop.map(hex).unwrap_or_default(),
+                json!({"key": w.key, "system": w.system, "name": w.name, "start": hex_spaced_upper(w.start), "stop": w.stop.map(hex_spaced_upper).unwrap_or_default(),
                        "kind": w.kind(),
                        "did": w.old.did, "byte": w.old.offset, "mask": w.mask(),
-                       "monitor": w.monitor.map(hex).unwrap_or_default(),
+                       "monitor": w.monitor.map(hex_spaced_upper).unwrap_or_default(),
                        "wait_s": w.wait_s, "poll_ms": w.poll_ms, "timeout_s": w.timeout_s,
                        "conditions": w.conditions.iter().filter_map(|c| condition(c)).map(|c| c.text).collect::<Vec<_>>(),
                        "read_back": w.read_back, "source": w.source})
@@ -90,7 +87,7 @@ impl Service {
             return Err(ServiceError::value("a pending operation is already recorded; recover it first"));
         }
         let frame_log = self.capture.as_ref().and_then(|c| c.path()).map(|p| p.to_string_lossy().into_owned());
-        let request = hex(w.start);
+        let request = hex_spaced_upper(w.start);
         let mut attempt = audit::record("attempt");
         attempt["action"] = json!("write");
         attempt["vin"] = json!(vin);
@@ -117,7 +114,7 @@ impl Service {
             "frame_log": frame_log,
             "key": w.key,
             "session": w.session,
-            "stop": w.stop.map(hex),
+            "stop": w.stop.map(hex_spaced_upper),
             "request": request,
         });
         if let Err(e) = audit::write_pending(&root, &pending) {

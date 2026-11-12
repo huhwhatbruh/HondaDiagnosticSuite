@@ -7,7 +7,7 @@ HDS is the software Honda dealers use. It only runs on Windows. This does the re
 > **Confirmed on a 2015 Accord (K24W1, CVT); a 2019 and a 2021 Civic have been scanned over an ELM327 with partial results** (see [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles)). I still need more Hondas:
 > **[open a vehicle report](../../issues/new?template=vehicle_report.md)**
 
-[Download v0.6.0](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.6.0) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
+[Download v0.6.1](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.6.1) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
 
 
 A generic OBD-II reader talks to the emissions computer and knows a few standard codes. A modern Honda carries a dozen or more
@@ -57,9 +57,9 @@ The desktop app `hondascan-gui` wraps the same scanner.
 
 ## Install and build
 
-Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.6.0) has three archives:
-`hondascan-0.6.0-linux-x86_64.tar.gz`, `hondascan-0.6.0-windows-x86_64.zip` (with the desktop app) and
-`hondascan-0.6.0-windows-i686.zip` (command line only, for 32-bit J2534 DLLs). There is nothing to install for the program
+Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.6.1) has three archives:
+`hondascan-0.6.1-linux-x86_64.tar.gz`, `hondascan-0.6.1-windows-x86_64.zip` (with the desktop app) and
+`hondascan-0.6.1-windows-i686.zip` (command line only, for 32-bit J2534 DLLs). There is nothing to install for the program
 itself: no Python, no Rust, no Wine. Which Linux and Windows versions run it, the udev rule, the C compiler the GD101's J2534 mode
 needs and the serial and CAN set-up are on [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started).
 
@@ -79,6 +79,8 @@ simulator profile and replaces your VIN: [Contributing a vehicle](https://github
 - **Allowlisted.** It sends a short list of diagnostic services, never to "every ECU at once", and refuses everything else inside the
   program. The ones that change something (clearing codes, four actuator tests, eight writing functions) each need a confirmation. Clearing
   codes has run successfully on a car; the actuator tests and the writing functions have never been run on one, so do not use them on yours. Details in [Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety).
+- **Private by default.** Nothing leaves your computer unless you choose to send a short report when something goes wrong; what it holds,
+  and what it never holds, is on [Privacy](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Privacy).
 - **Open source.** GPL-3.0-or-later, with the vehicle database included, so a clean clone builds and runs.
 
 ## Status

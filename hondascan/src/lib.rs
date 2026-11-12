@@ -16,6 +16,8 @@ pub mod dbcrypt;
 pub mod diagh;
 pub mod diagh_dtc;
 pub mod handback;
+pub mod errlog;
+pub mod hexfmt;
 pub mod history;
 pub mod honda;
 pub mod ident;

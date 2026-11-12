@@ -4,6 +4,7 @@
 //! What both decide (which PIDs to read, which text a code gets) is here once and cli.rs calls it; cli.rs prints lines, this returns JSON.
 //! Never run on a car or a real adapter; tests/klineservice.rs drives it through the emulated ELM327.
 use crate::db::Database;
+use crate::hexfmt::hex_spaced_upper;
 use crate::kwp::{real_ecu_id, KwpClient, KwpError, TESTER};
 use crate::livedata::LiveData;
 use crate::obd9141::{self, Obd};
@@ -23,10 +24,6 @@ pub fn kind(adapter: &dyn Adapter) -> Value {
         Some(_) => json!("iso14230"),
         None => Value::Null,
     }
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02X}")).collect::<Vec<_>>().join(" ")
 }
 
 /// An identification reply as text: bytes past ASCII become U+FFFD.
@@ -153,7 +150,7 @@ pub fn live(adapter: Option<&Arc<dyn Adapter>>, live: &LiveData, address: i64, s
 pub fn ecu_id(adapter: Option<&Arc<dyn Adapter>>, db: &Database, address: i64, system: &str, destination: Option<i64>) -> Result<Value, ServiceError> {
     let mut c = KwpClient::new(kwp_adapter(adapter)?.kwp_link(address_byte(address)?, TESTER));
     let d = c.read_ecu_id(0x80).map_err(crate::uds::UdsError::Kwp)?;
-    let mut out = json!({"address": address, "hex": hex(&d), "text": ascii(&d), "ecu_id": null, "match": null, "error": null});
+    let mut out = json!({"address": address, "hex": hex_spaced_upper(&d), "text": ascii(&d), "ecu_id": null, "match": null, "error": null});
     if let Some(dest) = destination {
         match c.read_by_lid(0x14).and_then(|raw| real_ecu_id(&raw, dest)) {
             Err(e) => out["error"] = json!(format!("no ECU ID from LID 14: {e}")),
@@ -200,7 +197,7 @@ pub fn obd_live(adapter: Option<&Arc<dyn Adapter>>, pids: &[u8]) -> Result<Value
         for (ecu, d) in o.read_pid(pid).map_err(obd_error)? {
             readings.push(match obd9141::decode(pid, &d) {
                 Some(r) => json!({"address": ecu, "pid": pid, "name": r.name, "value": r.value, "unit": r.unit}),
-                None => json!({"address": ecu, "pid": pid, "name": null, "hex": hex(&d)}),
+                None => json!({"address": ecu, "pid": pid, "name": null, "hex": hex_spaced_upper(&d)}),
             });
         }
     }

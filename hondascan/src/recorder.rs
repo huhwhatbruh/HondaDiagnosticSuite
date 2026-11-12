@@ -14,7 +14,7 @@ use crate::transport::can::{now, CaptureLog};
 use crate::trip::{Stat, Trip};
 use crate::value::{round_to, Named, Val};
 use serde_json::{json, Map, Value};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -122,7 +122,7 @@ pub struct Recorder {
     pub reads_failed: u64,
     rejected: Vec<(String, String)>,    // "system DID" -> error: the ECU answered with a negative response
     unanswered: Vec<(String, u64)>,     // "system DID" -> reads that got no answer (timeout, transport error)
-    silence: Vec<(u32, String)>,        // (address, key) of the unanswered reads since that ECU last answered
+    silence: BTreeMap<(u32, String), u64>, // (address, key) -> unanswered reads since that ECU last answered
     latency: Vec<(String, Stat)>,       // system -> Stat, in ms
     t_flush: Instant,
     t_summary: Instant,
@@ -159,7 +159,7 @@ impl Recorder {
             store, capture, vin: vin.into(), adapter: adapter.into(), ecus, t0, journal, sid, prev_codes, scan_s, wakeup: None,
             trip: Trip::new(), maps, condition: Condition::new(), alerts: Alerts::new(), stats: vec![], last_sample: HashMap::new(),
             codes: vec![], selftests: SelfTests::default(), first_read: HashSet::new(), appeared: vec![], gone: vec![], cleared: vec![],
-            reads_ok: 0, reads_failed: 0, rejected: vec![], unanswered: vec![], silence: vec![], latency: vec![],
+            reads_ok: 0, reads_failed: 0, rejected: vec![], unanswered: vec![], silence: BTreeMap::new(), latency: vec![],
             t_flush: Instant::now(), t_summary: Instant::now(), identified: HashSet::new(),
         };
         r.journal.event("session_start", json!({"vin": vin, "adapter": adapter, "scan_s": scan_s, "ecus": r.ecus.iter().map(EcuInfo::to_json).collect::<Vec<_>>()}));
@@ -231,7 +231,7 @@ impl Recorder {
                 Some((_, n)) => *n += 1,
                 None => self.unanswered.push((key.clone(), 1)),
             }
-            self.silence.push((ecu.address, key));
+            *self.silence.entry((ecu.address, key)).or_default() += 1;
         }
         if first {
             self.journal.event("read_failed", json!({"system": ecu.system, "address": ecu.address, "did": did, "error": err, "refused": refused}));
@@ -241,7 +241,7 @@ impl Recorder {
     /// This ECU answered: its unanswered reads so far were not the car switching off. Another ECU's answer says nothing about
     /// it (2026-10-15: the SRS, which stays powered, answered while the PCM had already gone quiet).
     pub fn answered(&mut self, address: u32) {
-        self.silence.retain(|(a, _)| *a != address);
+        self.silence.retain(|(a, _), _| *a != address);
     }
 
     pub fn timing(&mut self, ecu: &EcuInfo, ms: f64) {
@@ -514,9 +514,9 @@ impl Recorder {
     pub fn stop(&mut self, reason: &str) -> Value {
         if reason == "car off" {
             // the reads that found the car gone are not the car failing to answer
-            for (_, key) in std::mem::take(&mut self.silence) {
+            for ((_, key), n) in std::mem::take(&mut self.silence) {
                 if let Some(p) = self.unanswered.iter().position(|(k, _)| *k == key) {
-                    self.unanswered[p].1 -= 1;
+                    self.unanswered[p].1 -= n;
                     if self.unanswered[p].1 == 0 {
                         self.unanswered.remove(p);
                     }

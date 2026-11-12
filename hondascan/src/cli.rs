@@ -33,6 +33,7 @@ use crate::actuator::{condition, TESTS};
 use crate::actuatorrun::{monotonic_clock, ActuatorRun, Reader, RunError};
 use crate::audit;
 use crate::db::Database;
+use crate::hexfmt::hex_spaced_upper;
 use crate::honda::{Ecu, HondaCan, FUNCTIONAL_ID, OBD_FUNCTIONAL_ID, PROBE_ADDRESS};
 use crate::ident::{match_ecu, read_ecu_info, read_vin};
 use crate::klineservice;
@@ -526,10 +527,6 @@ fn ask(io: &mut Io, prompt: &str) -> bool {
     line.trim().to_lowercase() == "y"
 }
 
-fn hex_spaced(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02X}")).collect::<Vec<_>>().join(" ")
-}
-
 /// `{:02X}` for a possibly negative number, as Python prints it.
 fn hex2(n: i32) -> String {
     if n < 0 { format!("-{:02X}", -n) } else { format!("{n:02X}") }
@@ -752,15 +749,15 @@ pub fn main(argv: &[String], io: &mut Io) -> i32 {
     if let Cmd::Write { action, .. } = &a.cmd {
         if action == "list" {
             for w in WRITES {
-                let stop = w.stop.map_or_else(|| "none (HDS sends no stop)".to_string(), hex_spaced);
-                out!(io, "{}: {} ({}, start {}, stop {})", w.key, w.name, w.system, hex_spaced(w.start), stop);
+                let stop = w.stop.map_or_else(|| "none (HDS sends no stop)".to_string(), hex_spaced_upper);
+                out!(io, "{}: {} ({}, start {}, stop {})", w.key, w.name, w.system, hex_spaced_upper(w.start), stop);
                 for c in w.conditions {
                     out!(io, "    needs: {}", condition(c).map_or("", |c| c.text));
                 }
                 let when = if let Some(m) = w.monitor {
                     format!(
                         "polls {} every {} ms for up to {} s",
-                        hex_spaced(m),
+                        hex_spaced_upper(m),
                         w.poll_ms,
                         crate::journal::py(&serde_json::json!(w.timeout_s)).trim_end_matches(".0")
                     )
@@ -913,7 +910,7 @@ fn run(a: &Args, db: &Arc<Database>, adapter: &Arc<dyn crate::transport::Adapter
         Cmd::Read { system, did } => {
             let e = resolve(&hc.discover(hint(system).as_deref(), None)?, system)?;
             let d = hc.client(e.address).read_did(*did)?;
-            out!(io, "{e}: DID {did:04X} = {}", hex_spaced(&d));
+            out!(io, "{e}: DID {did:04X} = {}", hex_spaced_upper(&d));
             return Ok(0);
         }
         Cmd::Live { system, dids, watch } => {
@@ -1090,7 +1087,7 @@ fn memory_run(hc: &mut HondaCan, cmd: &Cmd, e: &Ecu, io: &mut Io) -> R<i32> {
     match cmd {
         Cmd::Memory { address, length, format, .. } => {
             let d = hc.read_memory(e.address, *address, *length, *format)?;
-            out!(io, "{e}: 0x{address:08X} +{length} = {}", hex_spaced(&d));
+            out!(io, "{e}: 0x{address:08X} +{length} = {}", hex_spaced_upper(&d));
             Ok(0)
         }
         Cmd::MemoryProbe { address, .. } => {
@@ -1157,7 +1154,7 @@ fn kwp(adapter: &Arc<dyn crate::transport::Adapter>, db: &Arc<Database>, cmd: &C
     match action.as_str() {
         "ecu-id" => {
             let d = c.read_ecu_id(0x80)?;
-            out!(io, "{who}: {}  {}", hex_spaced(&d), str_repr(&klineservice::ascii(&d)));
+            out!(io, "{who}: {}  {}", hex_spaced_upper(&d), str_repr(&klineservice::ascii(&d)));
             // HDS's body-ECU identity (BE_UTILS.CreateRealEcuId): LID 0x14 (6 bytes) + the destination byte, read only when asked for
             if let Some(dest) = destination {
                 match c.read_by_lid(0x14).and_then(|raw| real_ecu_id(&raw, *dest)) {
@@ -1172,7 +1169,7 @@ fn kwp(adapter: &Arc<dyn crate::transport::Adapter>, db: &Arc<Database>, cmd: &C
         "read" => {
             let Some(lid) = lid else { return Err(Fail::Exit("kwp read needs a local identifier (hex)".into())) };
             let d = c.read_by_lid(*lid)?;
-            out!(io, "{who}: LID {lid:02X} = {}", hex_spaced(&d));
+            out!(io, "{who}: LID {lid:02X} = {}", hex_spaced_upper(&d));
         }
         "dtc" => {
             let recs = c.read_dtcs(crate::kwp::ALL_GROUPS)?;
@@ -1240,7 +1237,7 @@ fn obd(adapter: &Arc<dyn crate::transport::Adapter>, db: &Arc<Database>, cmd: &C
                 for (ecu, d) in o.read_pid(pid)? {
                     match obd9141::decode(pid, &d) {
                         Some(r) => out!(io, "ECU 0x{ecu:02X} PID {pid:02X} {:38} {:.2} {}", r.name, r.value, r.unit),
-                        None => out!(io, "ECU 0x{ecu:02X} PID {pid:02X} {}", hex_spaced(&d)),
+                        None => out!(io, "ECU 0x{ecu:02X} PID {pid:02X} {}", hex_spaced_upper(&d)),
                     }
                 }
             }
@@ -1322,15 +1319,15 @@ fn write_cmd(hc: &mut HondaCan, db: &Arc<Database>, cmd: &Cmd, addresses: Option
         };
         if let Some(stop) = w.stop {
             out!(io, "{}: sends {} and {} to the {} ECU{session}, waits {} s, then reads {}.",
-                w.name, hex_spaced(w.start), hex_spaced(stop), w.system,
+                w.name, hex_spaced_upper(w.start), hex_spaced_upper(stop), w.system,
                 crate::journal::py(&serde_json::json!(w.wait_s)).trim_end_matches(".0"), w.read_back);
         } else if let Some(monitor) = w.monitor {
             out!(io, "{}: sends {} to the {} ECU{session}, then polls {} every {} ms for up to {} s (HDS sends no stop): {}.",
-                w.name, hex_spaced(w.start), w.system, hex_spaced(monitor), w.poll_ms,
+                w.name, hex_spaced_upper(w.start), w.system, hex_spaced_upper(monitor), w.poll_ms,
                 crate::journal::py(&serde_json::json!(w.timeout_s)).trim_end_matches(".0"), w.read_back);
         } else {
             out!(io, "{}: sends {} to the {} ECU{session}, then polls every {} ms for up to {} s (HDS sends no stop): {}.",
-                w.name, hex_spaced(w.start), w.system, w.poll_ms,
+                w.name, hex_spaced_upper(w.start), w.system, w.poll_ms,
                 crate::journal::py(&serde_json::json!(w.timeout_s)).trim_end_matches(".0"), w.read_back);
         }
         let conds = w.conditions.iter().map(|c| condition(c).map_or("", |c| c.text)).collect::<Vec<_>>().join("; ");
@@ -1371,7 +1368,7 @@ fn write_cmd(hc: &mut HondaCan, db: &Arc<Database>, cmd: &Cmd, addresses: Option
         address: e.address,
         key: w.key,
         name: w.name,
-        request: hex_spaced(w.start),
+        request: hex_spaced_upper(w.start),
         frame_log: frame_log.clone(),
     };
     let mut attempt = audit::record("attempt");
@@ -1400,7 +1397,7 @@ fn write_cmd(hc: &mut HondaCan, db: &Arc<Database>, cmd: &Cmd, addresses: Option
         "frame_log": frame_log,
         "key": w.key,
         "session": w.session,
-        "stop": w.stop.map(hex_spaced),
+        "stop": w.stop.map(hex_spaced_upper),
         "request": entry.request,
     });
     if let Err(e) = audit::write_pending(&root, &pending) {
