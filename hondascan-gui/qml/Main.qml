@@ -44,6 +44,10 @@ Window {
             if (AppModel.link !== 2 && win.view !== "history") win.view = "overview"
             if (AppModel.link === 2) { Theme.ignition = true; keyOn.restart() }
         }
+        function onKlineChanged() {   // HONDASCAN_OPEN=METER on a K-line adapter: open that system once the search has found it
+            const k = JSON.parse(AppModel.kline), f = (k.found || []).find(x => x.system === AppModel.openHint())
+            if (f && k.open === null && k.busy === "") AppModel.klineOpen(f.address, f.system)
+        }
         function onEcusChanged() {
             const [hint, tab] = AppModel.openHint().split("/")   // "PGM-FI" or "PGM-FI/codes": a system, and which tab
             const e = hint === "" ? undefined : JSON.parse(AppModel.ecus).find(x => x.system_type === hint)
@@ -122,6 +126,10 @@ Window {
     }
 
     ReadCodesDialog { id: readDialog }
+    ShareDialog { id: shareDialog }
+    // the first time the app is opened: the sharing question, once the startup animation (if any) is out of the way
+    property bool introPlayed: false
+    Timer { interval: 1500; running: AppModel.shareAsk && (AppModel.introPlan === 2 || win.introPlayed) && !shareDialog.opened; onTriggered: shareDialog.open() }
     // HONDASCAN_SHOT=file.png: save a picture of the window after a few seconds of live data and quit
     Timer {
         interval: 7000
@@ -133,7 +141,7 @@ Window {
     }
     Toasts { anchors { right: parent.right; bottom: parent.bottom; margins: 16 } }
     Rectangle { anchors.fill: parent; radius: win.corner; color: Theme.background; visible: win.waitingForPlan }
-    Intro { id: intro; anchors.fill: parent; corner: win.corner; sequence: AppModel.introSequence; onDissolving: swap.restart(); onFailed: reason => AppModel.introFailed(reason) }
+    Intro { id: intro; anchors.fill: parent; corner: win.corner; sequence: AppModel.introSequence; onDissolving: swap.restart(); onFinished: win.introPlayed = true; onFailed: reason => { win.introPlayed = true; AppModel.introFailed(reason) } }
 
     // the window's edges and corners resize it (the frame has no border of its own)
     Repeater {

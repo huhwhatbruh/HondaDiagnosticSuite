@@ -8,7 +8,9 @@
 //! which has to stay running for the advertisement to last, so a child process holds it and is restarted if it ends.
 //! Nothing here needs root. The adapter must be powered and not rfkill-blocked (`rfkill unblock bluetooth`).
 //!
-//! The channel is not encrypted: it carries the same read-only car data as the Wi-Fi link, which is plain HTTP too.
+//! The channel is not encrypted, like the Wi-Fi link, which is plain HTTP: the pairing code crosses it in the clear, and with
+//! the code come the gateway's actions (actuator tests, writes), so anyone in radio range who listens can use them.
+//! `HONDASCAN_PHONE_BLE=off` keeps the gateway to Wi-Fi.
 use crate::phone::{Conn, Logs};
 use serde_json::json;
 use std::io::{Read, Write};

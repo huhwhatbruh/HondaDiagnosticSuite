@@ -43,12 +43,28 @@ pub mod qobject {
         #[qproperty(QString, drive)] // the This drive card (drive::drive_json)
         #[qproperty(QString, system)] // the open system's screen without readings (sysview::SysView::layout_json), "{}" when none
         #[qproperty(QString, system_live, cxx_name = "systemLive")] // its readings, rate and read errors (sysview::SysView::live_json), "{}" when none
+        #[qproperty(QString, kline)] // the K-line screen (kline::Kline::view); its `mode` is "" on a CAN adapter and before any connect
         #[qproperty(QString, version)]
         #[qproperty(QString, backend_error, cxx_name = "backendError")]
         #[qproperty(i32, intro_plan, cxx_name = "introPlan")] // the startup animation: 0 not decided yet, 1 play it, 2 skip it (intro::due, once the settings are read)
         #[qproperty(bool, intro_on, cxx_name = "introOn")] // its setting, the sidebar's tick box
+        #[qproperty(bool, share_ask, cxx_name = "shareAsk")] // the first-launch question about sharing a car report is due (share.rs: not answered yet, and this build has a collector)
+        #[qproperty(bool, share_can, cxx_name = "shareCan")] // this build has a collector to send to (without one the app asks nothing and shows no switch)
+        #[qproperty(bool, share_on, cxx_name = "shareOn")] // the answer, the sidebar's tick box
+        #[qproperty(QString, share_text, cxx_name = "shareText")] // the report a send would post, for the card's "See what is sent"; empty until asked
         #[qproperty(QString, intro_sequence, cxx_name = "introSequence")] // assets/intro/sequence.json: which frame file each tick shows, set once at start (not read by QML: it may not read local files)
         type AppModel = super::AppModelRust;
+
+        /// The person's answer to the sharing question (the card's two buttons, or the sidebar's tick box). Share turns it on, anything else
+        /// turns it off; either way the card is not asked again.
+        #[qinvokable]
+        #[cxx_name = "shareAnswer"]
+        fn share_answer(self: Pin<&mut Self>, on: bool);
+
+        /// Ask the backend for the text a send would post (`shareText`); it is empty while there is no car to report.
+        #[qinvokable]
+        #[cxx_name = "sharePreview"]
+        fn share_preview(self: Pin<&mut Self>);
 
         /// Start the backend and the polling tick. Called once, when the window is up.
         #[qinvokable]
@@ -82,6 +98,19 @@ pub mod qobject {
 
         #[qinvokable]
         fn rescan(self: Pin<&mut Self>);
+
+        /// The K-line screen: look for the answering systems, open one (its codes and live values), or read a car over generic OBD-II.
+        #[qinvokable]
+        #[cxx_name = "klineScan"]
+        fn kline_scan(self: Pin<&mut Self>);
+
+        #[qinvokable]
+        #[cxx_name = "klineOpen"]
+        fn kline_open(self: Pin<&mut Self>, address: i32, system: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "obdRead"]
+        fn obd_read(self: Pin<&mut Self>);
 
         /// HONDASCAN_OPEN=<system type>: open that system's screen as soon as the scan finds it (for screenshots).
         #[qinvokable]
@@ -307,10 +336,16 @@ pub struct AppModelRust {
     writes: QString,
     write_running: QString,
     read_checked: QString,
+    kline: QString,
+    kline_state: crate::kline::Kline,
     version: QString,
     backend_error: QString,
     intro_plan: i32,
     intro_on: bool,
+    share_ask: bool,
+    share_can: bool,
+    share_on: bool,
+    share_text: QString,
     intro_sequence: QString,
 
     backend: Option<Arc<Backend>>,
@@ -346,7 +381,7 @@ impl Default for AppModelRust {
         AppModelRust {
             link: 0, scanning: false, vin: QString::default(), adapter: QString::default(), adapters: QString::from("[]"),
             last_adapter: QString::default(), ecus: QString::from("[]"), dtcs: QString::from("{}"), health: QString::from("{}"),
-            engine: QString::from("{}"), glances: QString::from("[]"), glances_live: QString::from("[]"), status: QString::from("{}"), system: QString::from("{}"), system_live: QString::from("{}"), drive: QString::from("{}"), maps: QString::from("{}"), history: QString::from("{}"), selftests: QString::from("null"), selfcheck: QString::from("{}"), car_wires: QString::from("[]"), car_body: QString::from("{}"), maintenance: QString::from("{}"), condition: QString::from("{}"), freeze_info: QString::from("{}"), act: QString::from("null"), actuator: QString::from("{}"), writes: QString::from("{}"), write_running: QString::default(), read_checked: QString::from("{}"), version: QString::default(), backend_error: QString::default(), intro_plan: 0, intro_on: true, intro_sequence: QString::default(),
+            engine: QString::from("{}"), glances: QString::from("[]"), glances_live: QString::from("[]"), status: QString::from("{}"), system: QString::from("{}"), system_live: QString::from("{}"), drive: QString::from("{}"), maps: QString::from("{}"), history: QString::from("{}"), selftests: QString::from("null"), selfcheck: QString::from("{}"), car_wires: QString::from("[]"), car_body: QString::from("{}"), maintenance: QString::from("{}"), condition: QString::from("{}"), freeze_info: QString::from("{}"), act: QString::from("null"), actuator: QString::from("{}"), writes: QString::from("{}"), write_running: QString::default(), read_checked: QString::from("{}"), kline: q(&crate::kline::Kline::default().view()), kline_state: Default::default(), version: QString::default(), backend_error: QString::default(), intro_plan: 0, intro_on: true, share_ask: false, share_can: false, share_on: false, share_text: QString::default(), intro_sequence: QString::default(),
             backend: None, settings: None, ecu_list: Vec::new(), dtc_state: HashMap::new(), read_codes: ReadCodes::default(), history_state: History::default(), map_sel: "IG".into(), status_data: None, self_check: None, self_check_err: None, backend_version: String::new(), settings_writable: false, maintenance_data: None, maintenance_err: None, last_report: None, act_tests: Vec::new(), act_status: None, write_fns: Vec::new(), catalogs: HashMap::new(),
             glance_polls: DEFS.iter().map(|_| None).collect(), sysview: None, watching: None, status_at: Instant::now(), status_busy: false,
         }
@@ -385,6 +420,7 @@ fn today() -> String {
 
 fn intro_always() -> bool { std::env::var("HONDASCAN_INTRO").is_ok_and(|v| v == "always") }
 
+mod kline;
 mod live;
 mod maintenance;
 mod ops;
@@ -438,7 +474,9 @@ impl qobject::AppModel {
             r.maintenance_data = None;
             r.maintenance_err = None;
             r.status_data = None;
+            r.kline_state = Default::default();
         }
+        self.as_mut().publish_kline();
         self.as_mut().set_maps(q(&maps_json(None, "IG")));
         self.as_mut().set_write_running(QString::default());
         self.as_mut().set_vin(QString::default());
@@ -521,6 +559,12 @@ impl qobject::AppModel {
     pub fn shot_path(&self) -> QString { QString::from(std::env::var("HONDASCAN_SHOT").unwrap_or_default().as_str()) }
 
     pub fn rescan(mut self: Pin<&mut Self>) {
+        // a K-line adapter has no CAN scan (its CAN link refuses every request): scanning again is that screen's own read
+        match self.rust().kline_state.mode {
+            "kwp" => return self.kline_scan(),
+            "obd" => return self.obd_read(),
+            _ => {}
+        }
         if *self.link() != 2 || *self.scanning() { return; } // one scan at a time
         self.as_mut().set_scanning(true);
         self.rpc("scan", json!({}), |m, r| m.on_scan(r));
@@ -572,6 +616,7 @@ impl qobject::AppModel {
                     let have_frames = !self.intro_sequence().is_empty();
                     self.as_mut().set_intro_plan(if intro_always() && have_frames { 1 } else { 2 });
                 }
+                self.as_mut().load_share();
                 // check this computer at every start (offline, instant); the welcome screen shows the answer
                 self.as_mut().run_self_check();
                 if let Some(p) = &h.pending_recovery {
@@ -604,11 +649,12 @@ impl qobject::AppModel {
             Ok(v) => {
                 let c: crate::api::Connected = parse(v).unwrap_or_default();
                 self.as_mut().set_link(2);
+                let on_kline = self.as_mut().kline_connected(spec, c.kline.as_deref());
                 if let Some(w) = c.warning { self.as_mut().say(WARN, "warn-adapter", "Another program may disturb the adapter", &w, 20.0); }
                 if let Some(n) = c.recovery.as_ref().and_then(crate::handback::on_connect) {
                     self.as_mut().say(n.level as i32, "handback", &n.title, &n.body, n.seconds);
                 }
-                self.rescan();
+                if !on_kline { self.rescan(); }
             }
             Err(e) => {
                 self.as_mut().set_link(0);

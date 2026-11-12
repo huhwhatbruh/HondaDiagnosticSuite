@@ -21,7 +21,7 @@ use crate::uds::UdsError;
 use crate::value::{round_to, Val};
 use serde_json::{json, Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -30,6 +30,10 @@ pub fn mono() -> f64 {
     static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
     START.get_or_init(Instant::now).elapsed().as_secs_f64()
 }
+
+/// Seconds after start the first check for a car report to send is made, and between checks after that.
+const SHARE_FIRST: f64 = 60.0;
+const SHARE_EVERY: f64 = 600.0;
 
 pub const NO_UNIT: [&str; 3] = ["", "<no units>", "-1"];
 pub const ENGINE: [&str; 2] = ["PGM-FI", "DIESEL"];
@@ -142,6 +146,9 @@ pub struct Service {
     tests: Vec<Test>, // the whitelisted actuator tests (tests replace the list with `set_tests`)
     pub gate: Option<((u32, String), usize)>, // (address, profile) of the last identity check that passed, with the scan generation it was made against
     pub scan_generation: usize,
+    /// When the next check for a car report to send is due (`share_tick`), and whether a send is running.
+    share_next: f64,
+    sharing: Arc<AtomicBool>,
 }
 
 impl Service {
@@ -151,6 +158,7 @@ impl Service {
             write_cancel: Arc::new(AtomicBool::new(false)),
             help: SignalHelp::new(db.clone()), catalogs: HashMap::new(), monitor: Monitor::new(live.clone()), live, db, emit, store, adapter: None, hc: None, capture: None, rec: None,
             spec: String::new(), ecus: vec![], vin: None, ident_queue: vec![], prim: HashMap::new(), actuator: None, pending_actuator: None, tests: TESTS.to_vec(), gate: None, scan_generation: 0, map_limits: None, clock: None,
+            share_next: mono() + SHARE_FIRST, sharing: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -253,8 +261,9 @@ impl Service {
         }
         let description = opened.describe();
         let warning = opened.path().and_then(|p| crate::transport::modem_manager_warning(&p));
+        let kline = crate::klineservice::kind(&*opened);
         self.adapter = Some(opened);
-        json!({"adapter": spec, "description": description, "warning": warning})
+        json!({"adapter": spec, "description": description, "warning": warning, "kline": kline})
     }
 
     pub fn disconnect(&mut self, reason: &str) -> Value {
@@ -473,11 +482,20 @@ impl Service {
         Box::new(move |code| systems.iter().find(|s| db.has_dtc(s, code)).unwrap_or(&systems[0]) == &mine)
     }
 
-    pub fn clear(&mut self, address: i64, system: &str, confirm: bool) -> Result<Value, ServiceError> {
+    /// `sim_only`: refuse (kind `Held`) unless the connected adapter is a simulated car; the phone gateway asks for it while
+    /// the clear is held (phone/calls.rs `CLEAR_HELD`). The check is here, on the connection as it is now, not on a
+    /// snapshot of it. Like a write (writeservice.rs), a clear goes only to a system the scan found at that address.
+    pub fn clear(&mut self, address: i64, system: &str, confirm: bool, sim_only: bool) -> Result<Value, ServiceError> {
         if !confirm {
             return Err(ServiceError::value("clear needs confirm: true"));
         }
-        let ecu = self.ecu_of(address, system);
+        if sim_only && !(self.hc.is_some() && crate::preflight::simulated(&self.spec)) {
+            return Err(ServiceError { kind: "Held".into(), message: "clearing codes is on hold for a real car".into() });
+        }
+        self.hc()?;
+        let Some(ecu) = self.ecus.iter().find(|e| e.address as i64 == address && (system.is_empty() || e.system == system)).cloned() else {
+            return Err(ServiceError::value(format!("the scan did not find {} at address {address}: scan first", if system.is_empty() { "a system" } else { system })));
+        };
         let hc = self.hc()?;
         hc.set_allow_clear(true);
         let r = hc.client(ecu.address).clear_dtcs();
@@ -542,6 +560,7 @@ impl Service {
     // -- monitor ---------------------------------------------------------------------------
     /// Run at most one due background task. Returns seconds until the next one (None: nothing scheduled).
     pub fn tick(&mut self) -> Result<Option<f64>, ServiceError> {
+        self.share_tick();
         let wait = crate::actservice::tick(self);
         let base = self.monitor_tick()?;
         Ok(match (base, wait) {
@@ -549,6 +568,28 @@ impl Service {
             (b, None) => b,
             (Some(b), Some(w)) => Some(b.min(w)),
         })
+    }
+
+    /// Send the car report when one is due (share.rs): sharing on, an endpoint, a finished real session, and a report that
+    /// differs from the last one sent. Checked every SHARE_EVERY seconds, and the upload runs on its own thread, so the bus
+    /// owner never waits for the network. A failed upload is tried again at the next check.
+    fn share_tick(&mut self) {
+        let now_m = mono();
+        if now_m < self.share_next || self.sharing.load(Ordering::Relaxed) {
+            return;
+        }
+        self.share_next = now_m + SHARE_EVERY;
+        let Ok(store) = self.store() else { return };
+        let root = store.root.clone();
+        let Some(text) = crate::share::due(&store, &root) else { return };
+        self.sharing.store(true, Ordering::Relaxed);
+        let flag = self.sharing.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = crate::share::send(&root, &text) {
+                eprintln!("share: {}", e.message);
+            }
+            flag.store(false, Ordering::Relaxed);
+        });
     }
 
     fn monitor_tick(&mut self) -> Result<Option<f64>, ServiceError> {
@@ -776,6 +817,26 @@ impl Service {
         let store = self.store()?;
         let root = store.root.clone();
         crate::backup::export(&store, &root, out)
+    }
+
+    // -- sharing a car report (share.rs) -------------------------------------------------------
+    /// `{asked, enabled, install_id, since, last_sent, can_send}`. Reads one small file.
+    pub fn share_status(&mut self) -> Result<Value, ServiceError> {
+        Ok(crate::share::status(&self.root()?))
+    }
+
+    /// The person's answer to the first-launch question, or a later change: Share, or No thanks (which forgets the install id).
+    pub fn share_set(&mut self, enabled: bool) -> Result<Value, ServiceError> {
+        let root = self.root()?;
+        crate::share::answer(&root, enabled)
+    }
+
+    /// The report a send would post, as `{text, bytes}` (`text` is null when there is no car to report yet). Works with sharing
+    /// off, and reads only.
+    pub fn share_preview(&mut self) -> Result<Value, ServiceError> {
+        let store = self.store()?;
+        let text = crate::share::preview(&store, &store.root);
+        Ok(json!({"bytes": text.as_ref().map(String::len), "text": text}))
     }
 
     // -- history ----------------------------------------------------------------------------

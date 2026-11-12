@@ -1,6 +1,6 @@
 [package]
 name = "hondascan-package"
-version = "0.5.1"
+version = "0.6.0"
 description = "Packages hondascan-gui (the archive) and bakes the car's wire model; kept out of the app crate, whose Qt build script links every binary of its package"
 license = "GPL-3.0-or-later"
 edition = "2021"

@@ -107,7 +107,7 @@ impl Service {
                 self.clear_actuator_pending();
                 return Err(ServiceError::value(m));
             }
-            Err(RunError::Runtime(m)) => {
+            Err(RunError::Runtime(m) | RunError::Cancelled(m) | RunError::Unconfirmed(m)) => {
                 self.clear_actuator_pending();
                 return Err(ServiceError { kind: "RuntimeError".into(), message: m });
             }

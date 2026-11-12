@@ -160,14 +160,13 @@ impl Service {
                 service_error = Some(ServiceError::value(m.clone()));
                 (false, "refused", Value::Null, Value::Null, Value::Null, vec![m])
             }
-            Err(RunError::Runtime(m)) => {
-                let outcome = if m.contains("cancelled") {
-                    "cancelled"
-                } else if m.contains("the start may have reached the ECU") {
-                    "unconfirmed"
-                } else {
-                    "error"
+            Err(e @ (RunError::Runtime(_) | RunError::Cancelled(_) | RunError::Unconfirmed(_))) => {
+                let outcome = match e {
+                    RunError::Cancelled(_) => "cancelled",
+                    RunError::Unconfirmed(_) => "unconfirmed",
+                    _ => "error",
                 };
+                let m = e.to_string();
                 service_error = Some(ServiceError { kind: "RuntimeError".into(), message: m.clone() });
                 (false, outcome, Value::Null, Value::Null, Value::Null, vec![m])
             }

@@ -19,6 +19,9 @@ pub fn adapter_list(ports: &[Port]) -> Vec<(String, String)> {
         } else {
             v.push((format!("elm:{}", p.device), format!("{} · {}", if p.product.is_empty() { "Serial" } else { &p.product }, p.device)));
         }
+        // the same port on the K-line: older body systems (ISO 14230), or generic OBD-II of a car from before CAN
+        v.push((format!("elm-kline:{}", p.device), format!("K-line (older body systems) · {}", p.device)));
+        v.push((format!("elm-obd:{}", p.device), format!("OBD-II K-line (cars before ~2008) · {}", p.device)));
     }
     v.push(("custom".into(), "Custom adapter spec…".into()));
     v
@@ -34,7 +37,10 @@ mod tests {
                      Port { device: "/dev/ttyUSB0".into(), product: "OBDLink".into(), gd101: false }];
         let l = adapter_list(&ports);
         let specs: Vec<&str> = l.iter().map(|(s, _)| s.as_str()).collect();
-        assert_eq!(&specs[specs.len() - 4..], ["gd101-j2534:/dev/ttyACM0", "elm:/dev/ttyACM0", "elm:/dev/ttyUSB0", "custom"]);
-        assert_eq!(l[l.len() - 2].1, "OBDLink · /dev/ttyUSB0");
+        assert_eq!(&specs[specs.len() - 8..], ["gd101-j2534:/dev/ttyACM0", "elm:/dev/ttyACM0", "elm-kline:/dev/ttyACM0", "elm-obd:/dev/ttyACM0",
+            "elm:/dev/ttyUSB0", "elm-kline:/dev/ttyUSB0", "elm-obd:/dev/ttyUSB0", "custom"]);
+        assert_eq!(l[l.len() - 4].1, "OBDLink · /dev/ttyUSB0");
+        assert_eq!(l[l.len() - 3].1, "K-line (older body systems) · /dev/ttyUSB0");
+        assert_eq!(l[l.len() - 2].1, "OBD-II K-line (cars before ~2008) · /dev/ttyUSB0");
     }
 }

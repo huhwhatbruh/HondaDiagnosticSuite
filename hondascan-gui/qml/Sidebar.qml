@@ -12,6 +12,8 @@ Rectangle {
     property string selected: "overview"   // "overview" or a system key
     signal pick(string key)
 
+    // the footer's tick boxes (the startup animation where the tree has its frames, the sharing choice where there is a collector)
+    readonly property int footer: 12 + 28 * Math.max(1, (AppModel.introSequence !== "" ? 1 : 0) + (AppModel.shareCan ? 1 : 0))
     readonly property var ecus: JSON.parse(AppModel.ecus)
     readonly property var codes: JSON.parse(AppModel.dtcs)
 
@@ -78,7 +80,7 @@ Rectangle {
 
     Flickable {   // a car with many systems scrolls above the footer instead of running over it
         id: list
-        anchors { fill: parent; margins: 8; bottomMargin: 48 }
+        anchors { fill: parent; margins: 8; bottomMargin: root.footer + 8 }
         contentWidth: width
         contentHeight: items.implicitHeight
         clip: true
@@ -116,13 +118,20 @@ Rectangle {
             topPadding: 24
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
-            text: "Connect and scan to list the car’s systems."
+            text: JSON.parse(AppModel.kline).mode ? "On the K-line, the systems that answer are listed in the overview." : "Connect and scan to list the car’s systems."
             color: Theme.mutedFg
             font { family: Theme.sans; pixelSize: 12 }
         }
     }
     }
-    Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom; bottomMargin: 40 } height: 1; color: Theme.border }
+    Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom; bottomMargin: root.footer } height: 1; color: Theme.border }
+    Check {   // sharing a car report: the answer to the first-launch question, changeable here (shown only where this build has somewhere to send it)
+        visible: AppModel.shareCan
+        anchors { left: parent.left; leftMargin: 12; bottom: parent.bottom; bottomMargin: AppModel.introSequence !== "" ? 40 : 12 }
+        text: "Share car details"
+        checked: AppModel.shareOn
+        onToggled: AppModel.shareAnswer(checked)
+    }
     Check {   // the startup animation: on the first start of each day, unless this is unticked (no switch where the tree has no frames)
         visible: AppModel.introSequence !== ""
         anchors { left: parent.left; leftMargin: 12; bottom: parent.bottom; bottomMargin: 12 }   // in line with the rows' titles

@@ -2,6 +2,7 @@
 //! Port of hondascan/livedata.py, which documents the part/mask layout and the converter equations (HDS Converter.dll's,
 //! checked against the DLL by hds-xref/tools/convverify.py).
 use crate::big::Big;
+use crate::kwp::KwpError;
 use crate::uds::{DidReader, UdsError};
 use crate::db::Database;
 use rusqlite::params;
@@ -167,6 +168,10 @@ pub struct LiveData {
     warmed: Mutex<HashSet<String>>,                          // systems whose converters `warm` has loaded
 }
 
+/// After this many unanswered requests in a row `read` stops asking: each costs the timeout (twice with the retry), and the rest of
+/// the list would only repeat it (METER has 68 identifiers).
+const SILENT_LIMIT: u32 = 3;
+
 impl LiveData {
     pub fn new(db: Arc<Database>) -> LiveData {
         LiveData { db, conv: Mutex::new(HashMap::new()), signals: Mutex::new(HashMap::new()), dids: Mutex::new(HashMap::new()), warmed: Mutex::new(HashSet::new()) }
@@ -265,11 +270,23 @@ impl LiveData {
             _ => self.dids(system, "DataList").into_iter().filter(|d| !self.signals(system, *d).is_empty()).collect(),
         };
         let mut out = vec![];
+        let mut silent = 0; // identifiers in a row that got no answer at all: a rejection (NRC) is an answer
         for did in list {
+            if silent >= SILENT_LIMIT {
+                out.push((did, Some("not read: the ECU stopped answering".into()), vec![]));
+                continue;
+            }
             match client.read_did(did as u16) {
-                Ok(data) => out.push((did, None, self.signals(system, did).iter().map(|s| s.decode(&data)).collect())),
+                Ok(data) => {
+                    silent = 0;
+                    out.push((did, None, self.signals(system, did).iter().map(|s| s.decode(&data)).collect()))
+                }
                 Err(UdsError::Io(e)) => return Err(e),
-                Err(e) => out.push((did, Some(e.to_string()), vec![])),
+                Err(e) => {
+                    let unanswered = matches!(e, UdsError::NoResponse(_) | UdsError::Transport(_) | UdsError::Kwp(KwpError::NoResponse(_) | KwpError::Transport(_)));
+                    silent = if unanswered { silent + 1 } else { 0 };
+                    out.push((did, Some(e.to_string()), vec![]))
+                }
             }
         }
         Ok(out)

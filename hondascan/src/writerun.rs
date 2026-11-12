@@ -193,7 +193,7 @@ impl WriteRun {
                 Ok(false) => {
                     self.stop(hc);
                     self.leave(hc, left_session);
-                    return Err(RunError::Runtime("cancelled during HDS's wait; the routine was stopped".into()));
+                    return Err(RunError::Cancelled("cancelled during HDS's wait; the routine was stopped".into()));
                 }
                 Err(e) => {
                     self.stop(hc);
@@ -229,7 +229,7 @@ impl WriteRun {
         let mut last_err: Option<String> = None;
         loop {
             if cancel() {
-                return Err(RunError::Runtime("cancelled during the read-back poll".into()));
+                return Err(RunError::Cancelled("cancelled during the read-back poll".into()));
             }
             match hc.client(self.address).read_did(self.write.old.did) {
                 Ok(d) => {
@@ -265,7 +265,7 @@ impl WriteRun {
             }
             let left = deadline.saturating_duration_since(now);
             if !sleep(left.min(Duration::from_millis(self.poll_ms.max(1))), cancel) {
-                return Err(RunError::Runtime("cancelled during the read-back poll".into()));
+                return Err(RunError::Cancelled("cancelled during the read-back poll".into()));
             }
         }
     }
@@ -281,7 +281,7 @@ impl WriteRun {
         let deadline = Instant::now() + Duration::from_secs_f64(self.timeout_s.max(0.0));
         loop {
             if cancel() {
-                return Err(RunError::Runtime("cancelled during the routine-status poll".into()));
+                return Err(RunError::Cancelled("cancelled during the routine-status poll".into()));
             }
             match hc.client(self.address).routine_control(monitor) {
                 Ok(rsp) => {
@@ -321,7 +321,7 @@ impl WriteRun {
             }
             let left = deadline.saturating_duration_since(now);
             if !sleep(left.min(Duration::from_millis(self.poll_ms.max(1))), cancel) {
-                return Err(RunError::Runtime("cancelled during the routine-status poll".into()));
+                return Err(RunError::Cancelled("cancelled during the routine-status poll".into()));
             }
         }
     }
@@ -373,7 +373,7 @@ impl WriteRun {
             self.write.key
         );
         hc.note(&format!("write {}: outcome unknown. {msg}", self.write.key));
-        RunError::Runtime(msg)
+        RunError::Unconfirmed(msg)
     }
 
     fn stop(&mut self, hc: &mut HondaCan) {

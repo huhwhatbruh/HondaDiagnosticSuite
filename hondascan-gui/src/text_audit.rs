@@ -43,7 +43,7 @@ fn no_screen_text_carries_leftover_wording() {
         }
     }
     // the words most cards now get from Rust (the part before each file's own tests: strings in tests describe cases, not cards)
-    for name in ["actuator", "baseline", "drive", "glance", "history", "maps", "reference", "selfcheck", "selftests", "writes"] {
+    for name in ["actuator", "baseline", "drive", "glance", "history", "kline", "maps", "reference", "selfcheck", "selftests", "writes"] {
         let src = source(concat!(env!("CARGO_MANIFEST_DIR"), "/src"), &format!("{name}.rs"));
         for (n, line) in src.split("#[cfg(test)]").next().unwrap_or("").lines().enumerate() {
             if line.trim_start().starts_with("//") || !line.contains('"') { continue; }
@@ -95,4 +95,11 @@ fn the_condition_card_quotes_the_gate_the_backend_uses() {
 fn the_checker_catches_a_banned_phrase() {
     assert!(banned("This is not Honda's stored data").contains(&"Honda's stored"), "the checker must catch a banned phrase");
     assert!(banned("Say what the card shows.").is_empty(), "an ordinary sentence passes");
+}
+
+#[test]
+fn the_share_card_says_how_often_a_report_goes_out_as_the_backend_does() {
+    let gap = constant("share.rs", "MIN_GAP");
+    assert_eq!(gap, 86400.0, "ShareDialog.qml says a report goes out about once a day; MIN_GAP in hondascan/src/share.rs must stay one day");
+    assert!(source(QML, "ShareDialog.qml").contains("about once a day"), "ShareDialog.qml must say how often reports go out");
 }

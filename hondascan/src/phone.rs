@@ -1,10 +1,11 @@
-//! The phone gateway: an HTTP view of the running backend, for the iPhone app (ios/): live values and reads, and, in a build from source only, the confirmed actions of `calls.rs`.
+//! The phone gateway: an HTTP view of the running backend, for the iPhone app (ios/): live values and reads, and the confirmed
+//! actions of `calls.rs` (the phone is the only screen of a box with no display, so it carries everything the desktop app does).
 //!
 //! It runs inside the backend process that owns the car (`hondascan-rpc` with HONDASCAN_PHONE=addr:port), so the phone shares
 //! the one bus owner instead of fighting for it. The gateway never forwards anything a client sends: every route is fixed
 //! and tied to one backend method whose parameters are named and typed here (`phone/calls.rs`), and nothing a client sends
 //! names a method. Actuator tests, writes and the clear exist as routes, each needing `confirm: true`; the backend applies the
-//! rules (whitelist, VIN, conditions, time limit) and a packaged release refuses them. It
+//! rules (whitelist, VIN, conditions, time limit), the same in a packaged release and in a build from source. It
 //! asks the backend for one thing itself, four times a second: `snapshot` (service.rs), which reads this process's memory
 //! and puts no traffic on the bus.
 //!
@@ -12,8 +13,10 @@
 //!   GET /v1/signals                            every signal read so far, once: {"signals": [{system, symbol, unit, description, value}]}
 //!   the calls table                            /v1/... routes tied one to one to backend methods (`phone/calls.rs`)
 //!   POST /v1/log                               the app's own measurements, JSON lines (at most 64 KiB), appended to phone-client.jsonl
-//! All need `Authorization: Bearer <token>`. The link is plain HTTP, so the pairing code crosses it unencrypted: use it on a network
-//! you control (the box's own WPA2 hotspot, your home Wi-Fi), not on a shared one.
+//! All need `Authorization: Bearer <token>`. The link is plain HTTP, so the pairing code crosses it unencrypted, and whoever
+//! reads the code can start the actuator tests and the writes: use it on a network you control (the box's own WPA2 hotspot,
+//! your home Wi-Fi), not on a shared one. The Bluetooth channel (ble.rs) is not encrypted either, and anyone in radio range
+//! can read it; `HONDASCAN_PHONE_BLE=off` turns it off.
 //! `/v1/log` writes a file on the box and nothing else. Logs (see `log.rs`): `phone-gateway.jsonl` has one `req` line per request (peer, route,
 //! status, bytes, handling ms) and one `backend` line per snapshot (ms the backend took to answer, bytes, signals). The live
 //! document is {"t", "age_s", "snapshot", "events"}: `snapshot` is the backend's answer (null until the first one) with
@@ -200,6 +203,9 @@ impl Tap {
                 }
                 return Ok(());
             }
+            if msg["id"].as_str().is_some_and(|id| id.starts_with("phone:")) {
+                return Ok(()); // an answer the gateway stopped waiting for: not the app's, so it does not go on to it
+            }
             if let Some(ev) = msg["event"].as_str().filter(|e| EVENTS.contains(e)) {
                 let mut c = self.cache.lock().unwrap();
                 if ev == "codes" {
@@ -369,7 +375,7 @@ fn answer(req: &Request, peer: &str, ctx: &Ctx) -> (&'static str, &'static str, 
         ("/v1/signals", "GET") => ("200 OK", "application/json", signal_index(&ctx.cache).to_string()),
         ("/v1/log", "POST") => client_log(&req.body, peer, &ctx.logs),
         (r, m) if calls::is_call(r) => {
-            let (status, body) = calls::call(&ctx.relay, r, m, query, &req.body, calls::sim_adapter(&ctx.cache)).unwrap_or(("404 Not Found", "not found\n".into()));
+            let (status, body) = calls::call(&ctx.relay, r, m, query, &req.body).unwrap_or(("404 Not Found", "not found\n".into()));
             (status, "application/json", body)
         }
         ("/v1/snapshot" | "/v1/signals" | "/v1/log", _) => ("405 Method Not Allowed", TEXT, "not allowed\n".into()),

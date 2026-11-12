@@ -35,6 +35,7 @@ use crate::audit;
 use crate::db::Database;
 use crate::honda::{Ecu, HondaCan, FUNCTIONAL_ID, OBD_FUNCTIONAL_ID, PROBE_ADDRESS};
 use crate::ident::{match_ecu, read_ecu_info, read_vin};
+use crate::klineservice;
 use crate::kwp::{real_ecu_id, KwpClient, KwpError, TESTER};
 use crate::obd9141::{self, Obd, ObdError};
 use crate::transport::elm327::KProto;
@@ -74,6 +75,7 @@ pub enum Cmd {
     Preflight { vin: Option<String> },
     SelfCheck,
     Export { out: Option<String> },
+    Share { action: String, out: Option<String>, yes: bool },
     Report { out: Option<String> },
     Condition { vin: Option<String>, session: Option<i64>, json: bool },
     Dtc { systems: Vec<String>, mask: u8 },
@@ -353,6 +355,15 @@ pub fn parse_args(argv: &[String]) -> Result<Args, String> {
             let session = p.opt("session").map(|s| narrowed::<u32>(s, "--session", "session number", int0)).transpose()?.map(i64::from);
             Cmd::Condition { vin: p.opt("vin").map(String::from), session, json: p.flag("json") }
         }
+        "share" => {
+            let p = scan_args(rest, &Spec { valued: &["out"], flags: &["yes"], repeat: &[] })?;
+            let action = p.pos.first().cloned().unwrap_or_else(|| "status".to_string());
+            if !["status", "on", "off", "preview", "export"].contains(&action.as_str()) {
+                return Err(format!("share: unknown action {action} (status, on, off, preview, export)"));
+            }
+            no_extra(&p, 1)?;
+            Cmd::Share { action, out: p.opt("out").map(String::from), yes: p.flag("yes") }
+        }
         "report" => {
             let p = scan_args(rest, &Spec { valued: &["out"], flags: &[], repeat: &[] })?;
             no_extra(&p, 0)?;
@@ -538,7 +549,7 @@ fn sleep_interruptible(s: f64) -> bool {
 }
 
 /// The `-h`/`--help` text: the usage line plus the module doc's command summary.
-const HELP: [&str; 26] = [
+const HELP: [&str; 27] = [
     "usage: hondascan [-h] [-a ADAPTER] [--db DB] [--log LOG] [--addresses ADDRESSES] cmd ...",
     "   hondascan -a socketcan:can0 scan              find ECUs (HDS address table + DID rules)",
     "   hondascan -a socketcan:can0 dtc [SYSTEM...]   read DTCs (all found systems by default)",
@@ -562,6 +573,7 @@ const HELP: [&str; 26] = [
     "   hondascan -a ... ramwatch SYSTEM              the ignition module's RAM words, only from a 5A0-A510 PCM (--watch S needs --max-seconds N,",
     "                                                 --csv FILE, --force-profile; never run on a car)",
     "   hondascan -a socketcan:can0 report [--out F]  read the car and write the health report (HTML and JSON under reports/)",
+    "   hondascan condition [--vin VIN] [--session N] [--json]  judge the newest recorded drive against the car's earlier drives (offline)",
     "   hondascan selfcheck                           check this installation: database, data directory, audit trail, adapters (offline)",
     "   hondascan export [--out FILE.json]            write the JSON export and the .tar.gz backup of the data directory (offline)",
     "   hondascan --version                           print the version and exit",
@@ -602,6 +614,85 @@ fn condition_findings(io: &mut Io, vin: Option<&str>, session: Option<i64>, json
         Err(e) => {
             let _ = writeln!(io.err, "error: {e}");
             1
+        }
+    }
+}
+
+/// `hondascan share` (not in `--help`: the app asks and sends by itself, this is for looking and for turning it off): the opt-in
+/// car report (share.rs), offline. `preview` prints the exact JSON a send would post; `export` writes it to a file to attach to
+/// an issue (needs no consent: the person runs it and holds the file); `on` says what is shared and asks. It never sends, and
+/// never prints where a report would go.
+fn share(io: &mut Io, action: &str, out: Option<&str>, yes: bool) -> i32 {
+    let store = match Store::open(None) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = writeln!(io.err, "error: the history database could not be opened: {e}");
+            return 2;
+        }
+    };
+    let root = store.root.clone();
+    let fail = |io: &mut Io, e: crate::service::ServiceError| {
+        let _ = writeln!(io.err, "error: {e}");
+        2
+    };
+    let st = crate::share::status(&root);
+    match action {
+        "status" => {
+            out!(io, "sharing: {}", if st["enabled"] == true { "on" } else { "off" });
+            if let Some(id) = st["install_id"].as_str() {
+                out!(io, "install id: {id}");
+            }
+            out!(io, "this build can send reports: {}", if st["can_send"] == true { "yes" } else { "no" });
+            0
+        }
+        "on" => {
+            out!(io, "Sharing sends the project: the model part of your VIN (make, descriptor, model year, plant: never the serial), the control units that");
+            out!(io, "answered with their ids and part numbers, trouble codes, how the adapter and the car behaved in each session, the app version and your OS.");
+            out!(io, "Never the VIN, timestamps, driving data, notes, recordings or paths. See exactly what goes out with `hondascan share preview`.");
+            if !yes && !ask(io, "Turn sharing on? [y/N] ") {
+                out!(io, "left off");
+                return 0;
+            }
+            match crate::share::answer(&root, true) {
+                Ok(s) => {
+                    out!(io, "sharing is on (install id {})", s["install_id"].as_str().unwrap_or(""));
+                    0
+                }
+                Err(e) => fail(io, e),
+            }
+        }
+        "off" => match crate::share::answer(&root, false) {
+            Ok(_) => {
+                out!(io, "sharing is off; the install id was forgotten");
+                0
+            }
+            Err(e) => fail(io, e),
+        },
+        _ => {
+            let Some(text) = crate::share::preview(&store, &root) else {
+                out!(io, "nothing to share yet: no session on a real adapter has finished");
+                return 0;
+            };
+            match action {
+                "preview" => {
+                    let _ = write!(io.out, "{text}");
+                    0
+                }
+                "export" => {
+                    let path = out.map(std::path::PathBuf::from).unwrap_or_else(|| root.join(format!("exports/hondascan-report-{}.json", crate::transport::can::now() as i64)));
+                    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                        let _ = std::fs::create_dir_all(dir);
+                    }
+                    match std::fs::write(&path, &text) {
+                        Ok(()) => {
+                            out!(io, "{}", path.display());
+                            0
+                        }
+                        Err(e) => fail(io, e.into()),
+                    }
+                }
+                _ => unreachable!("the parser lists the actions"),
+            }
         }
     }
 }
@@ -707,6 +798,9 @@ pub fn main(argv: &[String], io: &mut Io) -> i32 {
     // Both read this installation only: no adapter is opened.
     if a.cmd == Cmd::SelfCheck {
         return selfcheck(io);
+    }
+    if let Cmd::Share { action, out, yes } = &a.cmd {
+        return share(io, action, out.as_deref(), *yes);
     }
     if let Cmd::Export { out } = &a.cmd {
         return export(io, out.as_deref());
@@ -1063,8 +1157,7 @@ fn kwp(adapter: &Arc<dyn crate::transport::Adapter>, db: &Arc<Database>, cmd: &C
     match action.as_str() {
         "ecu-id" => {
             let d = c.read_ecu_id(0x80)?;
-            let text: String = d.iter().map(|b| if *b < 0x80 { *b as char } else { '\u{fffd}' }).collect();
-            out!(io, "{who}: {}  {}", hex_spaced(&d), str_repr(&text));
+            out!(io, "{who}: {}  {}", hex_spaced(&d), str_repr(&klineservice::ascii(&d)));
             // HDS's body-ECU identity (BE_UTILS.CreateRealEcuId): LID 0x14 (6 bytes) + the destination byte, read only when asked for
             if let Some(dest) = destination {
                 match c.read_by_lid(0x14).and_then(|raw| real_ecu_id(&raw, *dest)) {
@@ -1085,8 +1178,8 @@ fn kwp(adapter: &Arc<dyn crate::transport::Adapter>, db: &Arc<Database>, cmd: &C
             let recs = c.read_dtcs(crate::kwp::ALL_GROUPS)?;
             out!(io, "{who}: {} code(s)", recs.len());
             for r in &recs {
-                let hit = db.lookup_dtc(&r.code, Some(r.failure_type as i64), system.as_ref().map(|s| s.to_uppercase()).as_deref(), Some(r.kind() == "pending"));
-                out!(io, "  {}  {:9} {}  {}", r.code, r.kind(), r.flags().join(" "), hit.first().map_or("", |h| h.description.as_str()));
+                let text = klineservice::kwp_description(db, r, &system.as_ref().map(|s| s.to_uppercase()).unwrap_or_default());
+                out!(io, "  {}  {:9} {}  {}", r.code, r.kind(), r.flags().join(" "), text);
             }
         }
         "live" => {
@@ -1128,8 +1221,7 @@ fn obd(adapter: &Arc<dyn crate::transport::Adapter>, db: &Arc<Database>, cmd: &C
         for (ecu, list) in o.dtcs(service)? {
             out!(io, "ECU 0x{ecu:02X} {label}: {} code(s)", list.len());
             for c in &list {
-                let hit = db.lookup_dtc(c, None, None, Some(service == obd9141::PENDING_DTC));
-                out!(io, "  {c}  {}", hit.first().map_or("", |h| h.description.as_str()));
+                out!(io, "  {c}  {}", klineservice::obd_description(db, c, service == obd9141::PENDING_DTC));
             }
         }
         Ok(())
@@ -1144,11 +1236,7 @@ fn obd(adapter: &Arc<dyn crate::transport::Adapter>, db: &Arc<Database>, cmd: &C
             codes(io, obd9141::PENDING_DTC, "pending")?;
         }
         "live" => {
-            let mut wanted: Vec<u8> = pids.clone();
-            if wanted.is_empty() {
-                wanted = o.supported_pids()?.into_values().flatten().collect::<std::collections::BTreeSet<_>>().into_iter().filter(|p| obd9141::decode(*p, &[0, 0]).is_some()).collect();
-            }
-            for pid in wanted {
+            for pid in klineservice::wanted_pids(&o, pids)? {
                 for (ecu, d) in o.read_pid(pid)? {
                     match obd9141::decode(pid, &d) {
                         Some(r) => out!(io, "ECU 0x{ecu:02X} PID {pid:02X} {:38} {:.2} {}", r.name, r.value, r.unit),
@@ -1333,14 +1421,13 @@ fn write_cmd(hc: &mut HondaCan, db: &Arc<Database>, cmd: &Cmd, addresses: Option
             entry.result(io, false, "refused", None, vec![m.clone()]);
             return Err(Fail::Error(m));
         }
-        Err(RunError::Runtime(m)) => {
-            let outcome = if m.contains("cancelled") {
-                "cancelled"
-            } else if m.contains("the start may have reached the ECU") {
-                "unconfirmed"
-            } else {
-                "error"
+        Err(e @ (RunError::Runtime(_) | RunError::Cancelled(_) | RunError::Unconfirmed(_))) => {
+            let outcome = match e {
+                RunError::Cancelled(_) => "cancelled",
+                RunError::Unconfirmed(_) => "unconfirmed",
+                _ => "error",
             };
+            let m = e.to_string();
             entry.result(io, false, outcome, None, vec![m.clone()]);
             return Err(Fail::Error(m));
         }

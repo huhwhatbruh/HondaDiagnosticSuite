@@ -29,6 +29,10 @@ impl fmt::Display for ConditionFailed {
 pub enum RunError {
     Value(String),
     Runtime(String),
+    /// The caller cancelled a write in flight; the routine was stopped (writerun.rs).
+    Cancelled(String),
+    /// A write whose start may have reached the ECU although its reply did not arrive (writerun.rs `ambiguous`).
+    Unconfirmed(String),
     Condition(ConditionFailed),
     Uds(UdsError),
 }
@@ -36,7 +40,7 @@ pub enum RunError {
 impl fmt::Display for RunError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RunError::Value(s) | RunError::Runtime(s) => write!(f, "{s}"),
+            RunError::Value(s) | RunError::Runtime(s) | RunError::Cancelled(s) | RunError::Unconfirmed(s) => write!(f, "{s}"),
             RunError::Condition(c) => write!(f, "{c}"),
             RunError::Uds(u) => write!(f, "{u}"),
         }

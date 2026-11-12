@@ -1,0 +1,21 @@
+name = "hondascan-collector"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Logs and traces would record each request, including the sender's address: leave them off.
+[observability]
+enabled = false
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "openhonda"
+
+# At most 5 accepted reports a minute for everyone together (per Cloudflare location): 7,200 a day at one location, far below
+# R2's free 1,000,000 writes a month, and a flood cannot fill the free 10 GB faster than it can be noticed.
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 5
+  period = 60

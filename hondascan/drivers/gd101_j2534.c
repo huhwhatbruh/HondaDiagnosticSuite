@@ -126,8 +126,9 @@ static int command(const unsigned char *cmd, int n, unsigned char *reply, size_t
     for (;;) {
         int r = recv_frame(p, deadline);
         if (r < 0) return -fail(ERR_TIMEOUT, "no reply from the adapter");
+        if (r < 1) continue;                        /* an empty frame carries no command byte: p[0] would be stale */
         if (r >= 2 && p[0] == 0x43 && p[1] == 0x01) { queue_rx(p, r); continue; }
-        if (r >= 1 && (p[0] & 0xF0) != 0x40)
+        if ((p[0] & 0xF0) != 0x40)
             return -fail(ERR_FAILED, "adapter is in a GODIAG encrypted session: replug it");
         if (p[0] != (cmd[0] | 0x40) || (p[0] == 0x43 && (r < 4 || p[3] != cmd[3]))) continue;
         if ((size_t)r > cap) r = cap;               /* the adapter's length field is not trusted */
@@ -156,7 +157,12 @@ long PassThruOpen(const void *name, ULONG *id) {
         t.c_cflag = BOTHER | CS8 | CREAD | CLOCAL;
         t.c_ispeed = t.c_ospeed = 2534;
         memset(t.c_cc, 0, sizeof t.c_cc);
-        ioctl(fd, TCSETS2, &t);
+        if (ioctl(fd, TCSETS2, &t)) {                  /* without 2534 baud the adapter stays in its ELM mode */
+            long rc = fail(ERR_DEVICE_NOT_CONNECTED, strerror(errno));
+            close(fd);
+            fd = -1;
+            return rc;
+        }
     }
     int dtr = TIOCM_DTR;
     ioctl(fd, TIOCMBIS, &dtr);

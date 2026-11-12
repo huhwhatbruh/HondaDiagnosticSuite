@@ -13,12 +13,12 @@
 //!   clear            one system's codes (needs `confirm: true`; held, see `CLEAR_HELD`)
 //!
 //! The backend enforces what HDS enforces (the per-system whitelist, the VIN match, the conditions, the old value read first,
-//! the time limit; actservice.rs, writeservice.rs, service.rs) in the client. The gateway adds: the
+//! the time limit; actservice.rs, writeservice.rs, service.rs) in the client. Every call carries `expires` (rpc.rs): one the
+//! backend has not reached when the gateway stops waiting is not run. The gateway adds: the
 //! route is fixed, `confirm` must be the JSON boolean `true` in the body (a query string cannot carry it), a `reflash*` write key needs `HONDASCAN_PHONE_REFLASH=1` (none is in
 //! the backend's whitelist today: `write::WRITES` has the learn and meter-maintenance functions), and a test started from the phone is stopped when the phone has been
 //! silent for `HANDBACK_AFTER` (the app polls every 0.25-0.5 s, so a dropped link, a closed app or a dead battery hands control
 //! back to the ECU instead of waiting for the test's own time limit).
-use super::Shared;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -28,7 +28,8 @@ use std::time::{Duration, Instant};
 
 /// A phone silent this long while it holds a running actuator test gets the test stopped.
 pub const HANDBACK_AFTER: Duration = Duration::from_secs(6);
-/// Codes are cleared on a simulated car only until the owner lifts the hold (clearing codes on a real car is held back).
+/// Codes are cleared on a simulated car only until the owner lifts the hold (clearing codes on a real car is held back):
+/// the gateway asks the backend for `sim_only`, and the backend refuses any other adapter (service.rs `clear`).
 pub const CLEAR_HELD: bool = true;
 
 #[derive(Clone, Copy)]
@@ -158,12 +159,17 @@ impl Relay {
         let id = format!("phone:r{}", self.next.fetch_add(1, Ordering::Relaxed));
         let (reply, answer) = channel();
         self.pending.lock().unwrap().insert(id.clone(), reply);
-        let sent = self.tx.lock().unwrap().as_ref().is_some_and(|tx| tx.send(json!({"id": id, "method": method, "params": params}).to_string()).is_ok());
+        // `expires`: the backend drops the request if it is still queued when this wait is over (rpc.rs), so a call the
+        // phone was told had failed cannot run later
+        let line = json!({"id": id, "method": method, "params": params, "expires": crate::rpc::clock() + wait.as_secs_f64()}).to_string();
+        let sent = self.tx.lock().unwrap().as_ref().is_some_and(|tx| tx.send(line).is_ok());
         let got = if sent { answer.recv_timeout(wait).ok() } else { None };
         self.pending.lock().unwrap().remove(&id);
         match got {
             Some(m) if m.get("result").is_some() => Ok(m["result"].clone()),
             // the backend's own words: they say which condition failed
+            Some(m) if m["error"]["type"] == "Held" => Err(("403 Forbidden", m["error"]["message"].as_str().unwrap_or("held").to_string())),
+            Some(m) if m["error"]["type"] == "Expired" => Err(("504 Gateway Timeout", "the backend did not answer in time".into())),
             Some(m) => Err(("422 Unprocessable Entity", m["error"]["message"].as_str().or(m["error"].as_str()).unwrap_or("refused").to_string())),
             None => Err(("504 Gateway Timeout", "the backend did not answer in time".into())),
         }
@@ -223,14 +229,11 @@ fn text(status: &'static str, msg: impl Into<String>) -> (&'static str, String) 
 }
 
 /// Make the call for `path` (a row of ROUTES) and return (status, JSON body); None when `path` is not a call route.
-/// `method` is the HTTP method. `sim_only` says the connected adapter is a simulator (for CLEAR_HELD).
-pub fn call(relay: &Relay, path: &str, method: &str, query: &str, body: &[u8], sim_only: bool) -> Option<(&'static str, String)> {
+/// `method` is the HTTP method.
+pub fn call(relay: &Relay, path: &str, method: &str, query: &str, body: &[u8]) -> Option<(&'static str, String)> {
     let route = ROUTES.iter().find(|r| r.path == path)?;
     if route.post != (method == "POST") {
         return Some(("405 Method Not Allowed", json!({"error": "not allowed"}).to_string()));
-    }
-    if route.group == Group::Clear && CLEAR_HELD && !sim_only {
-        return Some(text("403 Forbidden", "clearing codes is on hold for a real car"));
     }
     let given: Map<String, Value> = if route.post {
         if body.is_empty() {
@@ -267,6 +270,9 @@ pub fn call(relay: &Relay, path: &str, method: &str, query: &str, body: &[u8], s
         }
         params.insert("confirm".into(), json!(true));
     }
+    if route.group == Group::Clear && CLEAR_HELD {
+        params.insert("sim_only".into(), json!(true)); // the backend refuses a real car: it knows what is connected now
+    }
     let started = route.method == "actuator_start";
     Some(match relay.ask(route.method, Value::Object(params), route.wait) {
         Ok(mut v) => {
@@ -281,7 +287,15 @@ pub fn call(relay: &Relay, path: &str, method: &str, query: &str, body: &[u8], s
             scrub(&mut v);
             ("200 OK", v.to_string())
         }
-        Err((status, msg)) => text(status, msg),
+        Err((status, msg)) => {
+            // no answer in time does not prove the test did not start (the backend may have been in the middle of it):
+            // hold it, so that a phone that goes silent still gets the stop
+            if started && status.starts_with("504") {
+                relay.touch();
+                relay.holding.store(true, Ordering::Relaxed);
+            }
+            text(status, msg)
+        }
     })
 }
 
@@ -297,10 +311,4 @@ fn scrub(v: &mut Value) {
         Value::Array(a) => a.iter_mut().for_each(scrub),
         _ => {}
     }
-}
-
-/// Whether the cached snapshot says the connected adapter is a simulator.
-pub fn sim_adapter(cache: &Shared) -> bool {
-    let c = cache.lock().unwrap();
-    c.snapshot.as_ref().and_then(|(v, _)| v["adapter"].as_str().map(crate::preflight::simulated)).unwrap_or(false)
 }

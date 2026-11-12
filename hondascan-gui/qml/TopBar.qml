@@ -28,6 +28,7 @@ Rectangle {
     property string custom: "j2534:/usr/lib/libj2534.so"
     readonly property string spec: list.length === 0 ? "" : (list[Math.min(choice, list.length - 1)].spec === "custom" ? custom.trim() : list[Math.min(choice, list.length - 1)].spec)
     readonly property bool connected: AppModel.link === 2
+    readonly property bool onKline: !!JSON.parse(AppModel.kline).mode
 
     // select the adapter used last time, once the list and the settings are both here
     function pickSaved() {
@@ -119,7 +120,7 @@ Rectangle {
             onClicked: root.connected ? AppModel.disconnect() : AppModel.connectAdapter(root.spec)
         }
         Button {
-            visible: root.connected
+            visible: root.connected && !root.onKline   // the K-line screen has its own "Look again" / "Read again"
             text: AppModel.scanning ? "Scanning…" : "Scan again"
             enabled: !AppModel.scanning
             onClicked: AppModel.rescan()

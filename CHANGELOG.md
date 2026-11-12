@@ -3,6 +3,27 @@
 All notable changes to the release. Format after [Keep a Changelog](https://keepachangelog.com/); versions follow
 [Semantic Versioning](https://semver.org/) from 1.0.0 on. Each release's page has the archives and their checksums.
 
+## [Unreleased]
+
+## [0.6.0]
+
+### Added
+- The program-reflash wire sequence (unlock, erase, per-block transfer, finish) and a strict simulated control unit to test it
+  against. Not wired to any command yet, and nothing has been sent to a real control unit.
+
+### Fixed
+- **Phone gateway: a request the phone was told had failed could still run later.** An actuator test started while a scan held
+  the backend got a timeout answer and then ran up to a minute afterwards. Requests now carry an expiry and are dropped when it
+  passes. A start that timed out is also covered by the stop-when-the-phone-goes-quiet rule.
+- **Phone gateway: clearing trouble codes is held for a real car by the backend**, on the adapter connected at that moment, not on
+  a cached snapshot; a clear goes only to a system the scan found.
+- **Phone gateway: guessing the pairing code from many addresses at once** is held to 20 wrong codes a minute in total, and a phone
+  that has already paired keeps its link meanwhile. The code is still sent unencrypted over Wi-Fi and Bluetooth: use the gateway
+  only on a network you control, and set `HONDASCAN_PHONE_BLE=off` if you do not need Bluetooth.
+- **GODIAG GD101 J2534 driver:** an empty frame from the adapter is skipped instead of being read as a stale command byte, and a
+  failed baud-rate switch is reported instead of leaving the adapter in its ELM mode.
+- **Write audit trail:** the outcome (cancelled, unconfirmed, error) no longer depends on the wording of an error message.
+
 ## [0.5.1]
 
 ### Fixed
@@ -17,8 +38,8 @@ All notable changes to the release. Format after [Keep a Changelog](https://keep
 ## [0.5.0]
 
 ### Changed
-- **The release is no longer read-only.** Clearing trouble codes, three actuator tests (radiator fan, A/C compressor clutch, 12 V
-  battery fan) and eight writing functions (the VTC learn, the first stage of the CVT inclination-sensor learn, the instrument
+- **The release is no longer read-only.** Clearing trouble codes, four actuator tests (radiator fan, A/C compressor clutch, 12 V
+  battery fan, EVAP purge solenoid) and eight writing functions (the VTC learn, the first stage of the CVT inclination-sensor learn, the instrument
   cluster's maintenance resets) are in the release, each allowlisted per system, behind a confirmation at every step, with a
   time limit and control handed back to the control unit at the end. Only clearing codes has been run on a car; the actuator
   tests and the writing functions have not, so do not use them on yours. The desktop app shows the Tests and Writes tabs.
@@ -30,7 +51,7 @@ All notable changes to the release. Format after [Keep a Changelog](https://keep
 - A new desktop app (Qt): dials that sweep at key-on, a Honda-red accent, a black matte look, dialogs over a blurred app. The 64-bit
   Windows zip carries it with its Qt libraries. The 32-bit Windows zip is the command line only (Qt 6 has no 32-bit Windows build).
   Not yet run on a real Windows machine or a car.
-- A macOS (Apple silicon) build of the app, built for release but **never started on a Mac**.
+- A build recipe for a macOS (Apple silicon) version of the app. No macOS archive was published, and it has **never been started on a Mac**.
 - `hondascan preflight`: before a drive, checks that the adapter is real, the VIN is the one expected and the engine, ABS/VSA,
   power steering, SRS and meter computers answer. Exit code 1 if one does not.
 - The scan sends the all-ECU wakeup that Honda's own tool sends (`3E 00` to `0x18DBEFF1`) before it asks each address, over raw

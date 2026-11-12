@@ -99,7 +99,7 @@ pub struct Test {
     pub state: &'static [&'static str], // live signals that show the effect (for the person; not a condition)
 }
 
-pub const TESTS: [Test; 3] = [
+pub const TESTS: [Test; 4] = [
     Test {
         key: "radiator_fan", system: "CANFI", name: "Radiator fan", did: 0x013C, values: &[0, 1],
         conditions: &["engine_off", "park", "battery_10_5", "ac_off", "stationary"], hold_s: 30.0,
@@ -117,6 +117,15 @@ pub const TESTS: [Test; 3] = [
         conditions: &["engine_off", "park", "battery_8", "stationary"], hold_s: 30.0,
         source: "PGMFI_INSP batt_fan_test (batt_fan_test.$CODE loop, BATT_FAN_TEST.TestMode checks): CM.IOControlByIdentifier(0x163, 3, 1 - BFAN), release (0x163, 0, 0)",
         state: &["BFAN", "BFANR"],
+    },
+    // HDS has two entries for this solenoid, CLEVAP.PCSTest (PGMFI_INSP 13175-13252, gate sub_2144a(1) 12317-12383) and
+    // CLEVAP.ELCMPCSTest (12041-12150, gate sub_20e30 12154-12229). Both send the same requests behind the same checks:
+    // ShiftCheck, BattVltgChk(0x2904, 0x4E20), then a wait until PGM-FI,VSP reads 0. The ON button sends 1, OFF sends 0.
+    Test {
+        key: "purge_solenoid", system: "CANFI", name: "EVAP purge control solenoid", did: 0x0137, values: &[0, 1],
+        conditions: &["engine_off", "park", "battery_10_5", "stationary"], hold_s: 30.0,
+        source: "PGMFI_INSP CLEVAP.PCSTest (loop 13199-13244, sub_2144a(1) checks): CM.IOControlByIdentifier(0x137, 3, 0|1), release (0x137, 0, 0)",
+        state: &["DPCS"],
     },
 ];
 

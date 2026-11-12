@@ -1,5 +1,5 @@
 //! The desktop app's backend: JSON lines on stdin and stdout (rpc.rs).
-//! With HONDASCAN_PHONE=addr:port it also serves the read-only phone gateway (phone.rs).
+//! With HONDASCAN_PHONE=addr:port it also serves the phone gateway (phone.rs).
 use std::io::{BufReader, Write};
 use std::sync::{Arc, Mutex};
 

@@ -6,13 +6,16 @@ Item {
     id: root
     signal open(string key)
     signal readRequested
-    implicitHeight: AppModel.link === 2 ? col.implicitHeight : welcome.implicitHeight
+    readonly property bool onKline: AppModel.link === 2 && JSON.parse(AppModel.kline).mode !== undefined && JSON.parse(AppModel.kline).mode !== ""
+    implicitHeight: onKline ? kline.implicitHeight : AppModel.link === 2 ? col.implicitHeight : welcome.implicitHeight
 
     Welcome { id: welcome; visible: AppModel.link !== 2; width: parent.width }
 
+    KlineView { id: kline; visible: root.onKline; width: parent.width }
+
     Column {
         id: col
-        visible: AppModel.link === 2
+        visible: AppModel.link === 2 && !root.onKline
         width: parent.width
         spacing: 12
         readonly property var glanceLive: JSON.parse(AppModel.glancesLive)

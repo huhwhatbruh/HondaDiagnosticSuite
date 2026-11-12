@@ -181,7 +181,7 @@ pub struct Recovery { pub pending: bool, pub handed_back: bool, pub actions: Vec
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
-pub struct Connected { pub adapter: String, pub description: String, pub warning: Option<String>, pub recovery: Option<Recovery> }
+pub struct Connected { pub adapter: String, pub description: String, pub warning: Option<String>, pub recovery: Option<Recovery>, pub kline: Option<String> }
 
 /// The in-flight write or bi-directional test recorded in `audit/pending.json` when the last backend process died
 /// (rpc.rs pending_recovery): what it was, so the app can say why control is being handed back.

@@ -6,9 +6,12 @@
 //!   <- {"event": "scan" | "codes" | "car" | "session" | "error" | "actuator", "data": {...}}   unsolicited
 //!
 //! Methods: hello, ports, connect {adapter}, disconnect, scan {addresses?}, dtcs {address, system}, clear {address, system,
-//! confirm: true}, catalog {system}, live {address, system, dids?}, read {address, did}, ecu_info {address, system}, status,
+//! confirm: true, sim_only?}, the K-line ones (klineservice.rs, read only, no clear: kline_systems, kline_scan, kline_dtcs {address, system},
+//! kline_live {address, system}, kline_ecu_id {address, system?, destination?}, obd_scan, obd_live {pids?}; `hello` and `connect` say
+//! `"kline": "iso14230" | "iso9141" | null`), catalog {system}, live {address, system, dids?}, read {address, did}, ecu_info {address, system}, status,
 //! snapshot (status plus the latest value of every signal read; memory only, for the phone gateway, phone.rs), vehicles, vehicle {vin}, session {id}, maintenance {vin}, baseline_freeze {vin, label?}, marker_add {vin, kind, note,
 //! mileage_km?}, marker_remove {id}, self_check, health_report {vin?, save?}, export {out?}, audit {vin?, limit?},
+//! share_status, share_set {enabled}, share_preview (the opt-in car report, share.rs),
 //! memory_read, memory_probe, ram_watch,
 //! actuator_tests, actuator_start, actuator_stop, actuator_status, write_functions,
 //! write_run {address, key, vin, confirm: true}, write_cancel, recovery {}, recover {adapter?}.
@@ -19,9 +22,14 @@
 //! installation's data directory and never open an adapter. `health_report` reads the connected car and writes the
 //! report (`save` defaults to true); `audit` is the write trail, newest first (`limit` defaults to 200, 0 means all).
 //!
+//! A request may carry `"expires": T` beside its id (seconds on this process's `clock()`): one still waiting in the queue at T
+//! is answered with an `Expired` error and not run. The phone gateway sets it on every call (phone/calls.rs), so a request it
+//! has already given up on (a start sent while a scan held the thread) does not act on the car afterwards.
+//!
 //! Between requests the service runs its monitor: watch list, trouble-code checks, snapshots, car on/off. A reader thread
 //! hands lines over a channel, so this works the same on every platform.
 use crate::db::Database;
+use crate::klineservice;
 use crate::memservice::num;
 use crate::service::{Emit, Service, ServiceError};
 use crate::sim::PROFILE_NAMES;
@@ -34,6 +42,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+/// Seconds since this process first asked: a clock that never jumps (a box with no battery clock sets its wall time late),
+/// for a request's `expires`.
+pub fn clock() -> f64 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64()
+}
 
 pub const IDLE: f64 = 1.0; // longest wait between monitor checks when nothing is due
 
@@ -116,7 +131,8 @@ impl Session {
         let pending = root.as_ref().and_then(|r| crate::audit::read_pending(r));
         let audit = root.as_ref().map(|r| crate::audit::writes_path(r).to_string_lossy().into_owned()).unwrap_or_default();
         json!({"db": self.svc.db.path.to_string_lossy(), "sim_profiles": PROFILE_NAMES.iter().filter(|p| **p != "empty").collect::<Vec<_>>(),
-               "adapter": if self.svc.adapter.is_some() { json!(self.svc.spec) } else { Value::Null }, "data_dir": data_dir,
+               "adapter": if self.svc.adapter.is_some() { json!(self.svc.spec) } else { Value::Null },
+               "kline": self.svc.adapter.as_deref().map_or(Value::Null, klineservice::kind), "data_dir": data_dir,
                "version": env!("CARGO_PKG_VERSION"), "audit": audit, "pending_recovery": pending,
                "autoconnect": std::env::var("HONDASCAN_ADAPTER").ok().filter(|s| !s.is_empty())}) // connect at start-up
     }
@@ -170,10 +186,47 @@ impl Session {
                 a.done()?;
                 s.dtcs(addr, &system)?
             }
-            "clear" => {
-                let (addr, system, confirm) = (a.int("address")?, a.string("system", "")?, a.flag("confirm"));
+            "kline_systems" => {
                 a.done()?;
-                s.clear(addr, &system, confirm)?
+                klineservice::systems(&s.db)
+            }
+            "kline_scan" => {
+                a.done()?;
+                klineservice::scan(s.adapter.as_ref(), &s.db, &s.emit)?
+            }
+            "kline_dtcs" => {
+                let (addr, system) = (a.int("address")?, a.string("system", "")?);
+                a.done()?;
+                klineservice::dtcs(s.adapter.as_ref(), &s.db, addr, &system)?
+            }
+            "kline_live" => {
+                let (addr, system) = (a.int("address")?, a.string("system", "")?);
+                a.done()?;
+                klineservice::live(s.adapter.as_ref(), &s.live, addr, &system)?
+            }
+            "kline_ecu_id" => {
+                let (addr, system) = (a.int("address")?, a.string("system", "")?);
+                let destination = a.get("destination").filter(|v| !v.is_null()).map(num).transpose()?;
+                a.done()?;
+                klineservice::ecu_id(s.adapter.as_ref(), &s.db, addr, &system, destination)?
+            }
+            "obd_scan" => {
+                a.done()?;
+                klineservice::obd_scan(s.adapter.as_ref(), &s.db)?
+            }
+            "obd_live" => {
+                let pids = match a.get("pids") {
+                    None | Some(Value::Null) => vec![],
+                    Some(Value::Array(v)) => v.iter().map(|x| num(x).and_then(|n| u8::try_from(n).map_err(|_| ServiceError::value(format!("a PID is one byte, not {n}"))))).collect::<Result<Vec<_>, _>>()?,
+                    Some(o) => return Err(type_error(format!("pids must be a list, not {}", crate::actservice::py_repr(o)))),
+                };
+                a.done()?;
+                klineservice::obd_live(s.adapter.as_ref(), &pids)?
+            }
+            "clear" => {
+                let (addr, system, confirm, sim_only) = (a.int("address")?, a.string("system", "")?, a.flag("confirm"), a.flag("sim_only"));
+                a.done()?;
+                s.clear(addr, &system, confirm, sim_only)?
             }
             "catalog" => {
                 let system = a.string("system", "")?;
@@ -350,6 +403,19 @@ impl Session {
                 a.done()?;
                 s.export(out.as_deref().filter(|o| !o.trim().is_empty()).map(std::path::Path::new))?
             }
+            "share_status" => {
+                a.done()?;
+                s.share_status()?
+            }
+            "share_set" => {
+                let enabled = a.flag("enabled");
+                a.done()?;
+                s.share_set(enabled)?
+            }
+            "share_preview" => {
+                a.done()?;
+                s.share_preview()?
+            }
             "audit" => {
                 let vin = a.maybe_string("vin")?;
                 let limit = match a.get("limit") {
@@ -434,6 +500,9 @@ pub fn serve(inp: Box<dyn BufRead + Send>, out: Arc<Mutex<dyn Write + Send>>, db
             Ok(req) => {
                 rid = req.get("id").cloned().unwrap_or(Value::Null);
                 match req.get("method").and_then(Value::as_str) {
+                    Some(_) if req.get("expires").and_then(Value::as_f64).is_some_and(|t| clock() > t) => {
+                        Err(ServiceError { kind: "Expired".into(), message: "the request waited too long behind another one and was not run".into() })
+                    }
                     Some(m) => s.call(m, req.get("params").unwrap_or(&Value::Null)),
                     None => Err(ServiceError { kind: "KeyError".into(), message: "'method'".into() }),
                 }

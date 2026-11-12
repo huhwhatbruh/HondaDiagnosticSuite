@@ -106,3 +106,33 @@ impl qobject::AppModel {
         q(&reference_json(cat.map(|c| &**c), ecu.as_ref().map_or("", |e| e.system.as_str()), &query.to_string()))
     }
 }
+
+impl qobject::AppModel {
+    /// Whether sharing a car report is on, and whether the first-launch question is still due (the backend keeps both: share.rs).
+    /// A build with no collector address has nothing to send to, so it asks nothing.
+    pub(super) fn load_share(self: Pin<&mut Self>) {
+        self.rpc("share_status", json!({}), |mut m, r| {
+            let Ok(v) = r else { return };
+            let asked = v["asked"].as_bool().unwrap_or(true);
+            let can = v["can_send"].as_bool().unwrap_or(false);
+            m.as_mut().set_share_on(v["enabled"].as_bool().unwrap_or(false));
+            m.as_mut().set_share_can(can);
+            m.as_mut().set_share_ask(can && !asked);
+        });
+    }
+
+    pub fn share_answer(mut self: Pin<&mut Self>, on: bool) {
+        self.as_mut().set_share_ask(false); // answered, whatever the backend says next: the card never comes back on its own
+        self.rpc("share_set", json!({"enabled": on}), |mut m, r| match r {
+            Ok(v) => m.as_mut().set_share_on(v["enabled"].as_bool().unwrap_or(false)),
+            Err(e) => m.say(WARN, "share", "Could not save the sharing choice", &e, 8.0),
+        });
+    }
+
+    pub fn share_preview(self: Pin<&mut Self>) {
+        self.rpc("share_preview", json!({}), |mut m, r| {
+            let text = r.ok().and_then(|v| v["text"].as_str().map(String::from)).unwrap_or_default();
+            m.as_mut().set_share_text(QString::from(text.as_str()));
+        });
+    }
+}

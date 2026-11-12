@@ -70,6 +70,9 @@ impl Inner {
         let (current, proto) = self.kline.as_ref().map(|k| (k.addressed, k.proto)).unwrap_or((None, KProto::Fast));
         if current != Some(key) {
             let base = if functional { FUNCTIONAL } else { PHYSICAL };
+            if self.kline.as_ref().is_some_and(|k| k.started) {
+                self.must_cmd("ATPC")?; // the adapter keeps one session: ATSH alone does not start another (ELM327 datasheet, ATPC)
+            }
             self.must_cmd(&format!("ATSH{base:02X}{target:02X}{tester:02X}"))?;
             if proto != KProto::Fast {
                 self.must_cmd(&format!("ATIIA{target:02X}"))?;
@@ -235,6 +238,9 @@ impl ElmKLine {
         let hex: String = data.iter().map(|b| format!("{b:02X}")).collect();
         let text = self.elm.with(|inn| {
             inn.retrying(&mut |i| {
+                if i.kline.as_ref().is_some_and(|k| k.addressed.is_some_and(|a| !a.2 || a.0 != 0x33)) {
+                    i.kline_address(0x33, TESTER, true)?; // a K-line request went to one ECU's header: OBD is the functional 33 again
+                }
                 let started = i.kline.as_ref().is_some_and(|k| k.started);
                 let wait = if started { i.timeout * 8.0 + 2.0 } else { INIT_TIMEOUT };
                 i.cmd(&hex, wait)

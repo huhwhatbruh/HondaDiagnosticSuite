@@ -9,6 +9,7 @@ use crate::actuator::TESTS;
 use crate::cvtsim::CvtIsl;
 use crate::db::Database;
 use crate::honda::{rx_id, tx_id, FUNCTIONAL_ID};
+use crate::reflash::{FlashTarget, ERASE_ROUTINE, FINISH_ROUTINE};
 use crate::simcapture::{self, CaptureEcu};
 use crate::simdrive::Drive;
 use crate::transport::can::{CaptureLog, VirtualBus};
@@ -55,6 +56,7 @@ pub fn ram_image() -> Vec<u8> {
 const SILENT_ON_FUNCTIONAL: [u8; 5] = [0x11, 0x12, 0x31, 0x7E, 0x7F];
 
 /// What an ECU answers: nothing, one response, or several (responsePending first).
+#[derive(Debug, Clone, PartialEq)]
 pub enum Reply {
     None,
     One(Vec<u8>),
@@ -73,6 +75,24 @@ fn nrc(sid: u8, code: u8) -> Vec<u8> {
 /// requestSequenceError (a completed one does not block: HDS's USM_Item menu resets several items in one session), and
 /// a status poll or stop for an id other than the one started is a requestSequenceError. `needs_extended` is false for
 /// the meter reset, which HDS sends in the default session.
+/// Reflash progress on one ECU (reflash.rs): the erase-marker/erase-routine sequence, then at most one open block
+/// at a time (address, size, bytes received so far, the next block sequence counter TransferData expects --
+/// starts at 1 per block and wraps `0xFF -> 0x00`, "with no explicit check", README.md "Transfer helpers decoded").
+#[derive(Debug, Clone)]
+pub struct ReflashSim {
+    pub target: FlashTarget,
+    erase_armed: bool,
+    erased: bool,
+    erase_confirmed: bool,
+    pending: Option<(u32, u32, usize, u8)>,
+}
+
+impl ReflashSim {
+    pub fn new(target: FlashTarget) -> ReflashSim {
+        ReflashSim { target, erase_armed: false, erased: false, erase_confirmed: false, pending: None }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Routine {
     pub ids: &'static [u16],
@@ -137,6 +157,14 @@ pub struct SimEcu {
     routine_done: bool,
     /// The stateful CVT_ISL learn (cvtsim.rs), instead of `routine`: its SLPLMOD/SLPLERR show at DID 0x2340 bytes 29/30.
     pub cvt_isl: Option<CvtIsl>,
+    /// Reflash state (reflash.rs, `with_reflash`): session `10 02` is only granted when this is set and
+    /// `pcm_level1_ok` (README.md "The `10 02`/`34` question, answered the other way round").
+    pub reflash: Option<ReflashSim>,
+    /// Session 2 (programming), separate from `extended` (session 3): neither sim session implies the other.
+    programming: bool,
+    /// A `27 01`/`27 02` on a `pcm_lock` ECU succeeded with the right key (distinct from `unlocked`, which stays
+    /// false for a `pcm_lock` ECU: its memory gate is permanently locked, but session `10 02` is not the same gate).
+    pcm_level1_ok: bool,
     /// Test hook: the first memory read is answered this many seconds late (a reply after P2).
     pub slow_memory_once: Option<f64>,
     /// Fault injection: (request prefix, replies to lose). The ECU acts on a matching request, then its reply never arrives.
@@ -182,6 +210,9 @@ impl SimEcu {
             routine_started: None,
             routine_done: false,
             cvt_isl: None,
+            reflash: None,
+            programming: false,
+            pcm_level1_ok: false,
             slow_memory_once: None,
             drop_replies: None,
             last: Instant::now(),
@@ -190,6 +221,13 @@ impl SimEcu {
 
     pub fn with_memory(mut self, mem: BTreeMap<u64, Vec<u8>>) -> SimEcu {
         self.memory = Some(mem);
+        self
+    }
+
+    /// Reflash-capable (reflash.rs); combine with `with_pcm_security` -- session `10 02` and the erase/download
+    /// path all need a valid `27 01`/`27 02` first, the same real-ECU precondition `pcm_level1_ok` records.
+    pub fn with_reflash(mut self, target: FlashTarget) -> SimEcu {
+        self.reflash = Some(ReflashSim::new(target));
         self
     }
 
@@ -240,15 +278,32 @@ impl SimEcu {
     pub fn ignition_cycle(&mut self) {
         self.extended = false;
         self.io_active.clear();
+        self.relock_reflash();
         if let Some(c) = &mut self.cvt_isl {
             c.ignition_cycle();
         }
         self.sync_cvt_isl();
     }
 
+    /// Drops session 2 (programming) and everything a reflash needs re-authenticated for: a fresh `27 01`/`27 02`,
+    /// a fresh erase, no block left open. A real ECU almost certainly drops the programming session the same way
+    /// it drops the extended one (the `10 01`/`10 03` handler already relocks `pcm_level1_ok` for that reason);
+    /// without this, the fake would stay armed/erased/unlocked across an ignition cycle or an S3 timeout, which is
+    /// weaker than the hardware CLAUDE.md requires the fake to match.
+    fn relock_reflash(&mut self) {
+        self.programming = false;
+        self.pcm_level1_ok = false;
+        if let Some(r) = &mut self.reflash {
+            *r = ReflashSim::new(r.target);
+        }
+    }
+
     fn expire(&mut self) {
         self.sync_cvt_isl();
         let now = Instant::now();
+        if self.programming && (now - self.last).as_secs_f64() > self.s3 {
+            self.relock_reflash();
+        }
         if self.extended && (now - self.last).as_secs_f64() > self.s3 {
             self.extended = false;
             self.io_active.clear();
@@ -271,7 +326,38 @@ impl SimEcu {
         self.last = now;
     }
 
+    /// Reflash's own fixed `31 01 FF 00` (erase) / `31 01 FF 01` (finish), outside the single-`Routine` HDS-write
+    /// mechanism below: `None` when `req` is not one of them (or this ECU has no `reflash`), to fall through.
+    fn reflash_routine_control(&mut self, req: &[u8]) -> Option<Vec<u8>> {
+        self.reflash.as_ref()?;
+        if req.len() != 4 || req[1] != 0x01 {
+            return None;
+        }
+        let rid = (req[2] as u16) << 8 | req[3] as u16;
+        if rid != ERASE_ROUTINE && rid != FINISH_ROUTINE {
+            return None;
+        }
+        if !self.programming {
+            return Some(nrc(0x31, 0x7F)); // subFunctionNotSupportedInActiveSession
+        }
+        let r = self.reflash.as_mut().unwrap();
+        if rid == ERASE_ROUTINE {
+            if !r.erase_armed {
+                return Some(nrc(0x31, 0x24)); // requestSequenceError: 2E F1 00 01 must come first
+            }
+            r.erased = true;
+            return Some(vec![0x71, 0x01, 0xFF, 0x00]);
+        }
+        if !r.erase_confirmed || r.pending.is_some() {
+            return Some(nrc(0x31, 0x24)); // not erased yet, or a block is still open
+        }
+        Some(vec![0x71, 0x01, 0xFF, 0x01])
+    }
+
     fn routine_control(&mut self, req: &[u8]) -> Vec<u8> {
+        if let Some(r) = self.reflash_routine_control(req) {
+            return r;
+        }
         if let Some(c) = &mut self.cvt_isl {
             let reply = c.control(req, self.extended, self.engine_running);
             self.sync_cvt_isl();
@@ -419,6 +505,7 @@ impl SimEcu {
                 let key = (req[2] as u16) << 8 | req[3] as u16;
                 if lvl == 0x02 && key == crate::seedkey::calc_key_pcm(seed) {
                     self.pcm_bad_keys = 0;
+                    self.pcm_level1_ok = true; // README.md "The `10 02`/`34` question": this is the gate session 2 checks
                     vec![0x67, 0x02] // accepted, yet 0x23 stays locked (see read_memory)
                 } else {
                     self.pcm_bad_keys += 1;
@@ -465,6 +552,98 @@ impl SimEcu {
         nrc(0x23, 0x31)
     }
 
+    /// `2E F1 00 01` / `2E F1 01 00`, the exe's own erase-mode markers (reflash.rs); any other DID or value is
+    /// `requestOutOfRange`, the second marker before an erase has run is `requestSequenceError`.
+    fn write_did(&mut self, req: &[u8]) -> Vec<u8> {
+        if self.reflash.is_none() {
+            return nrc(0x2E, 0x11);
+        }
+        if !self.programming {
+            return nrc(0x2E, 0x7F);
+        }
+        match req {
+            [0x2E, 0xF1, 0x00, 0x01] => {
+                self.reflash.as_mut().unwrap().erase_armed = true;
+                vec![0x6E, 0xF1, 0x00]
+            }
+            [0x2E, 0xF1, 0x01, 0x00] => {
+                if !self.reflash.as_ref().unwrap().erased {
+                    return nrc(0x2E, 0x24);
+                }
+                self.reflash.as_mut().unwrap().erase_confirmed = true;
+                vec![0x6E, 0xF1, 0x01]
+            }
+            _ => nrc(0x2E, 0x31),
+        }
+    }
+
+    /// RequestDownload: opens one block (reflash.rs); refused before the erase is confirmed, while a block is
+    /// still open, or outside the target's address range -- "a fake at least as strict as the ECU" (CLAUDE.md).
+    fn request_download(&mut self, req: &[u8]) -> Vec<u8> {
+        let Some(reflash) = &self.reflash else { return nrc(0x34, 0x11) };
+        if !self.programming {
+            return nrc(0x34, 0x7F); // subFunctionNotSupportedInActiveSession
+        }
+        if !reflash.erase_confirmed {
+            return nrc(0x34, 0x24); // requestSequenceError: the same condition write_did's erase-end case uses
+        }
+        if reflash.pending.is_some() {
+            return nrc(0x34, 0x24);
+        }
+        let target = reflash.target;
+        let Ok((address, size)) = crate::reflash::decode_request_download(req) else { return nrc(0x34, 0x13) };
+        if crate::reflash::check_bounds(&target, address, size).is_err() {
+            return nrc(0x34, 0x31);
+        }
+        self.reflash.as_mut().unwrap().pending = Some((address, size, 0, 1));
+        let mut out = vec![0x74, 0x20];
+        out.extend(target.max_block.to_be_bytes());
+        out
+    }
+
+    /// TransferData: one chunk of the open block. Rejects a chunk over the negotiated length, more bytes than
+    /// RequestDownload announced, and a block sequence counter other than the expected next one
+    /// (`7F 36 73`, wrongBlockSequenceCounter).
+    fn transfer_data(&mut self, req: &[u8]) -> Vec<u8> {
+        let Some(reflash) = &self.reflash else { return nrc(0x36, 0x11) };
+        if !self.programming {
+            return nrc(0x36, 0x7F);
+        }
+        let Some((address, size, received, next_counter)) = reflash.pending else { return nrc(0x36, 0x24) };
+        if req.len() < 3 {
+            return nrc(0x36, 0x13);
+        }
+        let (counter, data) = (req[1], &req[2..]);
+        if data.len() > reflash.target.max_block as usize {
+            return nrc(0x36, 0x13);
+        }
+        if received + data.len() > size as usize {
+            return nrc(0x36, 0x31);
+        }
+        if counter != next_counter {
+            return nrc(0x36, 0x73);
+        }
+        self.reflash.as_mut().unwrap().pending = Some((address, size, received + data.len(), next_counter.wrapping_add(1)));
+        vec![0x76, counter]
+    }
+
+    /// RequestTransferExit: closes the open block. Refused while bytes are still owed to it.
+    fn request_transfer_exit(&mut self, req: &[u8]) -> Vec<u8> {
+        let Some(reflash) = &self.reflash else { return nrc(0x37, 0x11) };
+        if !self.programming {
+            return nrc(0x37, 0x7F);
+        }
+        if req.len() != 1 {
+            return nrc(0x37, 0x13);
+        }
+        let Some((_, size, received, _)) = reflash.pending else { return nrc(0x37, 0x24) };
+        if received != size as usize {
+            return nrc(0x37, 0x24);
+        }
+        self.reflash.as_mut().unwrap().pending = None;
+        vec![0x77]
+    }
+
     pub fn handle(&mut self, req: &[u8]) -> Reply {
         self.requests.push(req.to_vec());
         let reply = self.answer(req);
@@ -496,8 +675,27 @@ impl SimEcu {
             0x2F => Reply::One(self.io_control(req)),
             0x31 => Reply::One(self.routine_control(req)),
             0x27 => Reply::One(self.security_access(req)),
+            0x2E => Reply::One(self.write_did(req)),
+            0x34 => Reply::One(self.request_download(req)),
+            0x36 => Reply::One(self.transfer_data(req)),
+            0x37 => Reply::One(self.request_transfer_exit(req)),
+            0x10 if req.len() == 2 && req[1] == 2 => {
+                // README.md "The `10 02`/`34` question, answered the other way round": this ECU gates 10 02 on a
+                // prior successful 27 02, not the reverse.
+                if self.reflash.is_none() || !self.pcm_level1_ok {
+                    return Reply::One(nrc(0x10, 0x33));
+                }
+                self.programming = true;
+                self.extended = false;
+                self.io_active.clear();
+                Reply::One(vec![0x50, 0x02, 0x00, 0x32, 0x01, 0xF4])
+            }
             0x10 if req.len() == 2 && (req[1] == 1 || req[1] == 3) => {
                 self.extended = req[1] == 3;
+                // Leaving the programming session relocks it (a strict guess, the safe side for the client, same
+                // reasoning as `with_pcm_security`'s doc comment): a later 10 02 needs a fresh 27 01/02 and a
+                // fresh erase, with no block left open from before.
+                self.relock_reflash();
                 if !self.extended {
                     self.io_active.clear(); // leaving the extended session ends every override
                 }
@@ -659,7 +857,11 @@ fn accord() -> Vec<SimEcu> {
 /// The recorded car on the J2534 path: which database systems the PCM (PGM-FI and CVT), the SRS and the meter are.
 const J2534_CAR: &[(u32, &[&str])] = &[(0x0E, &["CANFI", "CANCVT"]), (0x53, &["CANSRS"]), (0x60, &["CAN_METER"])];
 
-pub const PROFILE_NAMES: [&str; 14] = ["accord2015", "accord2015-ram", "accord2015-ram-locked", "accord2015-io", "accord2015-write", "accord2015-write-cvt", "accord2015-write-meter", "accord2015-stored", "drive", "evps", "accord2015-gd101", "accord2015-gd101-j2534", "accord2015-gd101-j2534-drive-home", "empty"];
+pub const PROFILE_NAMES: [&str; 15] = [
+    "accord2015", "accord2015-ram", "accord2015-ram-locked", "accord2015-io", "accord2015-write", "accord2015-write-cvt",
+    "accord2015-write-meter", "accord2015-stored", "accord2015-reflash", "drive", "evps", "accord2015-gd101", "accord2015-gd101-j2534",
+    "accord2015-gd101-j2534-drive-home", "empty",
+];
 
 /// The routine ids of the meter's US smart-maintenance resets that HDS's USM_Item menu defines (`sub_7231`, Meterapp
 /// 2207-2244) and this car offers: item A (0x7021, always offered) and items 1-5 (0x7022-0x7026, their enable bits set;
@@ -700,6 +902,14 @@ pub fn profile(name: &str) -> Result<Vec<SimNode>, String> {
         "accord2015-ram-locked" => {
             let mut e = SimEcu::new(0x10, "CANFI", &[(0x2600, &ECUID_5A0_A510)], &[]).with_memory(BTreeMap::from([(RAM_START, ram_image())])).with_pcm_security();
             e.mem_formats = vec![0x14];
+            scripted(vec![e])
+        }
+        // The PCM with the reflash sequence (reflash.rs): the 27 01/02 unlock, session 10 02 gated on it, the
+        // erase markers/routine and the download/transfer/exit path, all strict (out-of-range blocks, a wrong
+        // block counter, a block over the negotiated length, and the sequencing all refused). A VIN for the run's
+        // own match.
+        "accord2015-reflash" => {
+            let e = SimEcu::new(0x10, "CANFI", &[(0xF190, b"1HGCR2F3XFA000000")], &[]).with_pcm_security().with_reflash(*crate::reflash::target("a550_pcm").unwrap());
             scripted(vec![e])
         }
         // The PCM with the actuator tests and the signals HDS checks before them (engine off, park, battery, A/C off).
