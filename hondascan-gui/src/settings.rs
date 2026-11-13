@@ -14,10 +14,6 @@ pub struct Settings {
     pub self_check_at: f64,
     /// Whether that check found everything in order (backend version, settings folder writable).
     pub self_check_ok: bool,
-    /// The local day (`YYYY-MM-DD`) the startup animation last played: it plays on the first start of each day.
-    pub intro_day: String,
-    /// Whether the person turned the startup animation off.
-    pub intro_off: bool,
 }
 
 /// The adapter to offer at the next start: the one just connected, except a simulated car, which is never remembered (the
@@ -80,14 +76,13 @@ mod tests {
         let d = dir.to_str().unwrap();
         let mut s = Store::open(d);
         assert!(s.last == Settings::default());
-        let mut want = Settings { adapter: "gd101-j2534:/dev/gd101".into(), self_check_at: 1_760_000_000.5, self_check_ok: true, intro_day: "2026-10-30".into(), intro_off: true, ..Default::default() };
+        let mut want = Settings { adapter: "gd101-j2534:/dev/gd101".into(), self_check_at: 1_760_000_000.5, self_check_ok: true, ..Default::default() };
         want.pins.insert("CANFI".into(), vec![(0x2610, 6), (0x2610, 11)]);
         s.save(&want);
         let back = Store::open(d).last;
         assert!(back == want);
         assert_eq!(back.self_check_at, 1_760_000_000.5);
         assert!(back.self_check_ok, "the check result survives a restart");
-        assert_eq!((back.intro_day.as_str(), back.intro_off), ("2026-10-30", true), "so does the startup animation's day and switch");
         let t0 = std::fs::metadata(dir.join("gui.json")).unwrap().modified().unwrap();
         s.save(&want);
         assert_eq!(std::fs::metadata(dir.join("gui.json")).unwrap().modified().unwrap(), t0);

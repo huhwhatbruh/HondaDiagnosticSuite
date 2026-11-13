@@ -46,13 +46,10 @@ pub mod qobject {
         #[qproperty(QString, kline)] // the K-line screen (kline::Kline::view); its `mode` is "" on a CAN adapter and before any connect
         #[qproperty(QString, version)]
         #[qproperty(QString, backend_error, cxx_name = "backendError")]
-        #[qproperty(i32, intro_plan, cxx_name = "introPlan")] // the startup animation: 0 not decided yet, 1 play it, 2 skip it (intro::due, once the settings are read)
-        #[qproperty(bool, intro_on, cxx_name = "introOn")] // its setting, the sidebar's tick box
         #[qproperty(bool, share_ask, cxx_name = "shareAsk")] // the first-launch question about sharing a car report is due (share.rs: not answered yet, and this build has a collector)
-        #[qproperty(bool, share_can, cxx_name = "shareCan")] // this build has a collector to send to (without one the app asks nothing and shows no switch)
-        #[qproperty(bool, share_on, cxx_name = "shareOn")] // the answer, the sidebar's tick box
+        #[qproperty(bool, share_can, cxx_name = "shareCan")] // this build has a collector to send to (without one the app asks nothing)
+        #[qproperty(bool, share_on, cxx_name = "shareOn")] // the answer to the first-launch question
         #[qproperty(QString, share_text, cxx_name = "shareText")] // the report a send would post, for the card's "See what is sent"; empty until asked
-        #[qproperty(QString, intro_sequence, cxx_name = "introSequence")] // assets/intro/sequence.json: which frame file each tick shows, set once at start (not read by QML: it may not read local files)
         type AppModel = super::AppModelRust;
 
         /// The person's answer to the sharing question (the card's two buttons, or the sidebar's tick box). Share turns it on, anything else
@@ -126,21 +123,6 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "shotPath"]
         fn shot_path(self: &Self) -> QString;
-
-        /// The startup animation began: remember today, so it plays on the first start of each day only.
-        #[qinvokable]
-        #[cxx_name = "introStarted"]
-        fn intro_started(self: Pin<&mut Self>);
-
-        /// The startup animation could not play (its sequence or a frame did not load): said on stderr, which the package check reads.
-        #[qinvokable]
-        #[cxx_name = "introFailed"]
-        fn intro_failed(self: &Self, reason: &QString);
-
-        /// The sidebar's tick box: play the startup animation from now on, or not.
-        #[qinvokable]
-        #[cxx_name = "chooseIntro"]
-        fn choose_intro(self: Pin<&mut Self>, on: bool);
 
         /// Open a system's live data (loads its signal catalog first when needed).
         #[qinvokable]
@@ -273,7 +255,6 @@ use crate::actuator;
 use crate::history::History;
 use crate::maps::maps_json;
 use crate::reference::reference_json;
-use crate::settings::Settings;
 use crate::selfcheck::{passed, selfcheck_json, unix_now, SelfCheckState};
 use crate::selftests::{for_ecu as selftests_for, selftests_json};
 use crate::baseline;
@@ -289,7 +270,7 @@ use crate::sysview::SysView;
 use crate::systems::{info, shared_with};
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QDate, QString};
+use cxx_qt_lib::QString;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -340,13 +321,10 @@ pub struct AppModelRust {
     kline_state: crate::kline::Kline,
     version: QString,
     backend_error: QString,
-    intro_plan: i32,
-    intro_on: bool,
     share_ask: bool,
     share_can: bool,
     share_on: bool,
     share_text: QString,
-    intro_sequence: QString,
 
     backend: Option<Arc<Backend>>,
     settings: Option<crate::settings::Store>,
@@ -381,7 +359,7 @@ impl Default for AppModelRust {
         AppModelRust {
             link: 0, scanning: false, vin: QString::default(), adapter: QString::default(), adapters: QString::from("[]"),
             last_adapter: QString::default(), ecus: QString::from("[]"), dtcs: QString::from("{}"), health: QString::from("{}"),
-            engine: QString::from("{}"), glances: QString::from("[]"), glances_live: QString::from("[]"), status: QString::from("{}"), system: QString::from("{}"), system_live: QString::from("{}"), drive: QString::from("{}"), maps: QString::from("{}"), history: QString::from("{}"), selftests: QString::from("null"), selfcheck: QString::from("{}"), car_wires: QString::from("[]"), car_body: QString::from("{}"), maintenance: QString::from("{}"), condition: QString::from("{}"), freeze_info: QString::from("{}"), act: QString::from("null"), actuator: QString::from("{}"), writes: QString::from("{}"), write_running: QString::default(), read_checked: QString::from("{}"), kline: q(&crate::kline::Kline::default().view()), kline_state: Default::default(), version: QString::default(), backend_error: QString::default(), intro_plan: 0, intro_on: true, share_ask: false, share_can: false, share_on: false, share_text: QString::default(), intro_sequence: QString::default(),
+            engine: QString::from("{}"), glances: QString::from("[]"), glances_live: QString::from("[]"), status: QString::from("{}"), system: QString::from("{}"), system_live: QString::from("{}"), drive: QString::from("{}"), maps: QString::from("{}"), history: QString::from("{}"), selftests: QString::from("null"), selfcheck: QString::from("{}"), car_wires: QString::from("[]"), car_body: QString::from("{}"), maintenance: QString::from("{}"), condition: QString::from("{}"), freeze_info: QString::from("{}"), act: QString::from("null"), actuator: QString::from("{}"), writes: QString::from("{}"), write_running: QString::default(), read_checked: QString::from("{}"), kline: q(&crate::kline::Kline::default().view()), kline_state: Default::default(), version: QString::default(), backend_error: QString::default(), share_ask: false, share_can: false, share_on: false, share_text: QString::default(),
             backend: None, settings: None, ecu_list: Vec::new(), dtc_state: HashMap::new(), read_codes: ReadCodes::default(), history_state: History::default(), map_sel: "IG".into(), status_data: None, self_check: None, self_check_err: None, backend_version: String::new(), settings_writable: false, maintenance_data: None, maintenance_err: None, last_report: None, act_tests: Vec::new(), act_status: None, write_fns: Vec::new(), catalogs: HashMap::new(),
             glance_polls: DEFS.iter().map(|_| None).collect(), sysview: None, watching: None, status_at: Instant::now(), status_busy: false,
         }
@@ -411,14 +389,6 @@ fn dtcs_json(states: &HashMap<String, DtcState>) -> Value {
 }
 
 fn q(v: &Value) -> QString { QString::from(v.to_string().as_str()) }
-
-/// Today's local date, `YYYY-MM-DD`: what the startup animation's once a day is counted in.
-fn today() -> String {
-    let d = QDate::current_date();
-    format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day())
-}
-
-fn intro_always() -> bool { std::env::var("HONDASCAN_INTRO").is_ok_and(|v| v == "always") }
 
 mod kline;
 mod live;
@@ -504,7 +474,6 @@ impl qobject::AppModel {
         self.as_mut().set_adapters(q(&adapters_json(&[])));
         let wires: Vec<Value> = crate::car::wires().unwrap_or_default().into_iter().map(|g| json!({ "strength": g.strength, "path": g.path })).collect();
         self.as_mut().set_car_wires(q(&Value::Array(wires)));
-        self.as_mut().set_intro_sequence(QString::from(crate::intro::sequence()));
         let (a, b, c, d) = crate::car::BODY_MATRIX;
         self.as_mut().set_car_body(q(&json!({ "path": crate::car::BODY, "a": a, "b": b, "c": c, "d": d })));
         std::thread::spawn(move || loop {
@@ -538,23 +507,6 @@ impl qobject::AppModel {
     pub fn open_hint(&self) -> QString { QString::from(std::env::var("HONDASCAN_OPEN").unwrap_or_default().as_str()) }
 
     pub fn scroll_hint(&self) -> i32 { std::env::var("HONDASCAN_SCROLL").ok().and_then(|v| v.parse().ok()).unwrap_or(0) }
-
-    pub fn intro_started(mut self: Pin<&mut Self>) {
-        if let Some(st) = &mut self.as_mut().rust_mut().settings {
-            let s = Settings { intro_day: today(), ..st.last.clone() };
-            st.save(&s);
-        }
-    }
-
-    pub fn intro_failed(&self, reason: &QString) { eprintln!("intro: {reason}"); }
-
-    pub fn choose_intro(mut self: Pin<&mut Self>, on: bool) {
-        self.as_mut().set_intro_on(on);
-        if let Some(st) = &mut self.as_mut().rust_mut().settings {
-            let s = Settings { intro_off: !on, ..st.last.clone() };
-            st.save(&s);
-        }
-    }
 
     pub fn shot_path(&self) -> QString { QString::from(std::env::var("HONDASCAN_SHOT").unwrap_or_default().as_str()) }
 
@@ -602,19 +554,10 @@ impl qobject::AppModel {
                 self.as_mut().rust_mut().backend_version = h.version.clone();
                 if !h.data_dir.is_empty() {
                     let st = crate::settings::Store::open(&h.data_dir);
-                    let play = !self.intro_sequence().is_empty() && crate::intro::due(&st.last, &today(), intro_always(), !self.shot_path().is_empty());
-                    self.as_mut().set_intro_on(!st.last.intro_off);
                     self.as_mut().set_last_adapter(QString::from(crate::settings::remembered("", &st.last.adapter).as_str()));
                     let writable = st.writable();
                     self.as_mut().rust_mut().settings_writable = writable;
                     self.as_mut().rust_mut().settings = Some(st);
-                    // last: QML answers this by starting the animation, which records today in the settings stored just above
-                    self.as_mut().set_intro_plan(if play { 1 } else { 2 });
-                }
-                // no settings folder to remember a day in: no animation (unless asked for)
-                if *self.intro_plan() == 0 {
-                    let have_frames = !self.intro_sequence().is_empty();
-                    self.as_mut().set_intro_plan(if intro_always() && have_frames { 1 } else { 2 });
                 }
                 self.as_mut().load_share();
                 // check this computer at every start (offline, instant); the welcome screen shows the answer
@@ -626,7 +569,6 @@ impl qobject::AppModel {
                 if let Some(a) = h.autoconnect { self.connect_adapter(&QString::from(a.as_str())); }
             }
             Err(e) => {
-                self.as_mut().set_intro_plan(2);
                 self.as_mut().set_backend_error(QString::from(e.as_str()));
                 self.as_mut().rust_mut().self_check_err = Some(e.clone());
                 self.as_mut().publish_selfcheck();

@@ -3,13 +3,19 @@
 All notable changes to the release. Format after [Keep a Changelog](https://keepachangelog.com/); versions follow
 [Semantic Versioning](https://semver.org/) from 1.0.0 on. Each release's page has the archives and their checksums.
 
+## [0.6.2]
+
+### Changed
+- **The sidebar no longer has a "Share car details" tick box.** The question is asked once, the first time the app opens.
+  Change the answer any time with `hondascan share on` / `off`.
+
 ## [0.6.1]
 
 ### Added
 - **Opt-in problem report.** The first time the app opens, it asks whether to send a short report when something goes wrong,
   or when a car works for the first time (at most five a day): the errors the app ran into, the car's make, model and year from
   the VIN, the control units that answered, trouble codes and how the scan went. Never the VIN, port names, folders, driving
-  data or anything personal. Nothing is sent unless you press Share; change it any time with "Share car details" in the sidebar or
+  data or anything personal. Nothing is sent unless you press Share; change it any time with
   `hondascan share on` / `off`, and see the exact report with `hondascan share preview`. Details on the
   [Privacy](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Privacy) page.
 

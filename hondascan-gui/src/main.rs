@@ -16,7 +16,6 @@ mod format;
 mod glance;
 mod handback;
 mod history;
-mod intro;
 mod kline;
 mod live;
 mod maintenance;

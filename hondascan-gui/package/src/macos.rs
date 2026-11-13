@@ -97,8 +97,6 @@ pub fn bundle_qt(app: &Path, exe: &Path, arch: &str, version: &str) -> Res<()> {
         copy_tree(&qml.join(m), &contents.join("Resources/qml").join(m), &not_shipped)?;
     }
     copy_tree(&plugins.join("platforms"), &contents.join("PlugIns/platforms"), &|n: &str| not_shipped(n) || n != "libqcocoa.dylib")?;
-    // the startup animation's frames are JPEG (assets/intro): Qt decodes them with its JPEG plugin
-    copy_tree(&plugins.join("imageformats"), &contents.join("PlugIns/imageformats"), &|n: &str| not_shipped(n) || n != "libqjpeg.dylib")?;
     let mut queue = vec![exe.to_path_buf()];
     machos_in(&contents.join("Resources/qml"), &mut queue);
     machos_in(&contents.join("PlugIns"), &mut queue);

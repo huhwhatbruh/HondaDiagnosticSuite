@@ -51,16 +51,14 @@ fn main() {
                 QmlFile::from("qml/ReferenceTab.qml"),
                 QmlFile::from("qml/SelfCheck.qml"),
                 QmlFile::from("qml/DriveCard.qml"),
-                QmlFile::from("qml/Intro.qml"),
             ])
             .depend("QtQuick")
             .depend("QtQuick.Shapes")
             .depend("QtQuick.Controls"),
     )
     // The Noto fonts the app is drawn in, and Barlow Semi Condensed for the dials' big figures (all OFL, assets/fonts/OFL-*.txt), so it looks the same on a machine that has none of them.
-    // Loaded in Main.qml as qrc:/assets/fonts/<file>.ttf. With them, the startup animation's frames (tools/bakeintro.py), loaded by
-    // Intro.qml as qrc:/assets/intro/<file>.jpg.
-    .qrc_resources(QResources::new().resource(QResource::new().prefix("/").files(resources())))
+    // Loaded in Main.qml as qrc:/assets/fonts/<file>.ttf.
+    .qrc_resources(QResources::new().resource(QResource::new().prefix("/").files(FONTS)))
     .files(["src/model.rs"])
     .build();
 
@@ -71,20 +69,10 @@ fn main() {
     }
 }
 
-/// The embedded resources: the fonts, and the startup animation's frames, every .jpg in assets/intro (sorted, so a re-bake is picked up without
-/// listing them here; its sequence.json is compiled into the model instead: QML cannot read it from the resources).
-fn resources() -> Vec<String> {
-    println!("cargo::rerun-if-changed=assets/intro");
-    let mut files: Vec<String> = [
-        "assets/fonts/NotoSans-Regular.ttf",
-        "assets/fonts/NotoSans-Bold.ttf",
-        "assets/fonts/NotoSansMono-Regular.ttf",
-        "assets/fonts/NotoSansMono-Medium.ttf",
-        "assets/fonts/BarlowSemiCondensed-SemiBold.ttf",
-    ].map(String::from).to_vec();
-    let mut intro: Vec<String> = std::fs::read_dir("assets/intro").expect("assets/intro").flatten()
-        .map(|e| format!("assets/intro/{}", e.file_name().to_string_lossy())).filter(|n| n.ends_with(".jpg")).collect();
-    intro.sort();
-    files.extend(intro);
-    files
-}
+const FONTS: [&str; 5] = [
+    "assets/fonts/NotoSans-Regular.ttf",
+    "assets/fonts/NotoSans-Bold.ttf",
+    "assets/fonts/NotoSansMono-Regular.ttf",
+    "assets/fonts/NotoSansMono-Medium.ttf",
+    "assets/fonts/BarlowSemiCondensed-SemiBold.ttf",
+];

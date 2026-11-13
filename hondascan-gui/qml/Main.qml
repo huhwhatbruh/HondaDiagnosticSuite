@@ -28,18 +28,9 @@ Window {
     FontLoader { source: "qrc:/assets/fonts/BarlowSemiCondensed-SemiBold.ttf" }
 
     Component.onCompleted: { Theme.backdrop = app; AppModel.start() }
-    // The startup animation plays once a day, over the app while it starts. Until the settings say whether it plays, the app is
-    // behind black (it is black anyway), so a start with no animation shows no flash of the screens; the backend not answering
-    // lifts that after a moment.
-    property bool waitingForPlan: true
-    Timer { interval: 1500; running: win.waitingForPlan; onTriggered: win.waitingForPlan = false }
     Timer { id: keyOn; interval: 2500; onTriggered: Theme.ignition = false }
     Connections {
         target: AppModel
-        function onIntroPlanChanged() {
-            win.waitingForPlan = false
-            if (AppModel.introPlan === 1) { AppModel.introStarted(); intro.start() }
-        }
         function onLinkChanged() {
             if (AppModel.link !== 2 && win.view !== "history") win.view = "overview"
             if (AppModel.link === 2) { Theme.ignition = true; keyOn.restart() }
@@ -127,9 +118,8 @@ Window {
 
     ReadCodesDialog { id: readDialog }
     ShareDialog { id: shareDialog }
-    // the first time the app is opened: the sharing question, once the startup animation (if any) is out of the way
-    property bool introPlayed: false
-    Timer { interval: 1500; running: AppModel.shareAsk && (AppModel.introPlan === 2 || win.introPlayed) && !shareDialog.opened; onTriggered: shareDialog.open() }
+    // the first time the app is opened: the sharing question
+    Timer { interval: 1500; running: AppModel.shareAsk && !shareDialog.opened; onTriggered: shareDialog.open() }
     // HONDASCAN_SHOT=file.png: save a picture of the window after a few seconds of live data and quit
     Timer {
         interval: 7000
@@ -140,8 +130,6 @@ Window {
         }
     }
     Toasts { anchors { right: parent.right; bottom: parent.bottom; margins: 16 } }
-    Rectangle { anchors.fill: parent; radius: win.corner; color: Theme.background; visible: win.waitingForPlan }
-    Intro { id: intro; anchors.fill: parent; corner: win.corner; sequence: AppModel.introSequence; onDissolving: swap.restart(); onFinished: win.introPlayed = true; onFailed: reason => { win.introPlayed = true; AppModel.introFailed(reason) } }
 
     // the window's edges and corners resize it (the frame has no border of its own)
     Repeater {

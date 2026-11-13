@@ -348,9 +348,6 @@ fn bundle_qt(out: &Path, exe: &Path) -> Res<()> {
     for p in ["platforms", "xcbglintegrations", "platforminputcontexts", "wayland-decoration-client", "wayland-graphics-integration-client", "wayland-shell-integration"] {
         if plugins.join(p).is_dir() { copy_dir(&plugins.join(p), &out.join("plugins").join(p))?; }
     }
-    // the startup animation's frames are JPEG (assets/intro): Qt decodes them with its JPEG plugin, which nothing else here pulls in
-    std::fs::create_dir_all(out.join("plugins/imageformats"))?;
-    copy_file(&plugins.join("imageformats/libqjpeg.so"), &out.join("plugins/imageformats/libqjpeg.so"))?;
     let mut files = vec![exe.to_path_buf()];
     shared_objects(&out.join("qml"), &mut files);
     shared_objects(&out.join("plugins"), &mut files);
@@ -414,9 +411,6 @@ fn bundle_qt_windows(out: &Path, exe: &Path) -> Res<()> {
         copy_dir(&qml.join(m), &out.join("qml").join(m))?;
     }
     copy_dir(&plugins.join("platforms"), &out.join("plugins/platforms"))?;
-    // the startup animation's frames are JPEG (assets/intro): Qt decodes them with its JPEG plugin, which nothing else here pulls in
-    std::fs::create_dir_all(out.join("plugins/imageformats"))?;
-    copy_file(&plugins.join("imageformats/qjpeg.dll"), &out.join("plugins/imageformats/qjpeg.dll"))?;
     let available: std::collections::BTreeMap<String, PathBuf> = std::fs::read_dir(&bins)?.flatten().map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("dll")))
         .filter_map(|p| Some((p.file_name()?.to_string_lossy().to_ascii_lowercase(), p))).collect();
@@ -455,7 +449,6 @@ fn verify_packaged_gui(out: &Path) -> Res<()> {
         .env("HONDASCAN_HOME", &tmp)
         .env("HONDASCAN_ADAPTER", "sim")
         .env("HONDASCAN_SHOT", &shot)
-        .env("HONDASCAN_INTRO", "always")   // the startup animation plays too: its JPEG frames need the plugin shipped above
         .env("QT_QPA_PLATFORM", "offscreen")
         .env("LD_DEBUG", "libs")
         .stdout(std::process::Stdio::null())
@@ -473,9 +466,6 @@ fn verify_packaged_gui(out: &Path) -> Res<()> {
     let outside = qt_from_outside(&err, out);
     if !outside.is_empty() {
         return Err(format!("the packaged app loaded Qt from outside the package (it must run on its own): {}", outside.join(", ")).into());
-    }
-    if let Some(l) = err.lines().find(|l| l.contains("intro: ")) {
-        return Err(format!("the startup animation did not play: {l}").into());
     }
     if !status.success() || size < 1000 {
         return Err(format!("the packaged app did not start ({status}, picture {size} bytes): {}", err.trim()).into());
@@ -498,7 +488,6 @@ fn verify_packaged_gui_windows(out: &Path) -> Res<()> {
         .env("HONDASCAN_HOME", &tmp)
         .env("HONDASCAN_ADAPTER", "sim")
         .env("HONDASCAN_SHOT", &shot)
-        .env("HONDASCAN_INTRO", "always")   // the startup animation plays too: its JPEG frames need the plugin shipped above
         .env("WINEDEBUG", "-all")
         .env("WINEPREFIX", tmp.join("wine"))   // a fresh prefix of its own: never the caller's wine setup
         // Qt's default on Windows is Direct3D 11. Under wine (its D3D11 over a software GL on xvfb) the Shapes' curve renderer draws
@@ -520,9 +509,6 @@ fn verify_packaged_gui_windows(out: &Path) -> Res<()> {
         let _ = std::fs::copy(&shot, out.with_file_name(format!("{}-window.png", name.to_string_lossy())));
     }
     let _ = std::fs::remove_dir_all(&tmp);
-    if let Some(l) = err.lines().find(|l| l.contains("intro: ")) {
-        return Err(format!("the startup animation did not play under wine: {l}").into());
-    }
     if !status.success() || size < 1000 {
         return Err(format!("the packaged Windows app did not start under wine ({status}, picture {size} bytes): {}", err.trim()).into());
     }
@@ -582,7 +568,10 @@ fn main() -> Res<()> {
         }
         run(&mut build)?;
     }
-    run(Command::new("cargo").args(["build", "--release", "--bins"]).args(&target_args).current_dir(&krate).env("RUSTFLAGS", &rustflags))?;
+    // only the two the archive ships: `--bins` also built the eight research tools, each with its own LTO link (a warm rebuild
+    // took 190 s of CPU with them, 90-110 s without, measured 2026-11-13); build-db and encrypt-db build in their own `cargo run`
+    let shipped = ["--bin", "hondascan", "--bin", "hondascan-rpc"];
+    run(Command::new("cargo").args(["build", "--release"]).args(shipped).args(&target_args).current_dir(&krate).env("RUSTFLAGS", &rustflags))?;
     // Ship the encrypted form, not the plain SQLite file: `hondascan.db` is readable with `sqlite3` as-is, and it
     // carries the decoded HDS tables, which is the data this package exists to not hand out for free. `db.rs`
     // decrypts it in memory on open (`dbcrypt`); re-encrypt every time, so a stale `.enc` from an older `hondascan.db`
