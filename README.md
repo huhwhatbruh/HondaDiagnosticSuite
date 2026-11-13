@@ -7,7 +7,7 @@ HDS is the software Honda dealers use. It only runs on Windows. This does the re
 > **Confirmed on a 2015 Accord (K24W1, CVT); a 2019 and a 2021 Civic have been scanned over an ELM327 with partial results** (see [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles)). I still need more Hondas:
 > **[open a vehicle report](../../issues/new?template=vehicle_report.md)**
 
-[Download v0.6.2](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.6.2) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
+[Download v0.7.0](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.7.0) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
 
 
 A generic OBD-II reader talks to the emissions computer and knows a few standard codes. A modern Honda carries a dozen or more
@@ -57,9 +57,9 @@ The desktop app `hondascan-gui` wraps the same scanner.
 
 ## Install and build
 
-Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.6.2) has three archives:
-`hondascan-0.6.2-linux-x86_64.tar.gz`, `hondascan-0.6.2-windows-x86_64.zip` (with the desktop app) and
-`hondascan-0.6.2-windows-i686.zip` (command line only, for 32-bit J2534 DLLs). There is nothing to install for the program
+Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.7.0) has three archives:
+`hondascan-0.7.0-linux-x86_64.tar.gz`, `hondascan-0.7.0-windows-x86_64.zip` (with the desktop app) and
+`hondascan-0.7.0-windows-i686.zip` (command line only, for 32-bit J2534 DLLs). There is nothing to install for the program
 itself: no Python, no Rust, no Wine. Which Linux and Windows versions run it, the udev rule, the C compiler the GD101's J2534 mode
 needs and the serial and CAN set-up are on [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started).
 
@@ -77,7 +77,7 @@ simulator profile and replaces your VIN: [Contributing a vehicle](https://github
 
 - **Checked by execution** against Honda's own code, not against expectations written by hand.
 - **Allowlisted.** It sends a short list of diagnostic services, never to "every ECU at once", and refuses everything else inside the
-  program. The ones that change something (clearing codes, four actuator tests, eight writing functions) each need a confirmation. Clearing
+  program. The ones that change something (clearing codes, four actuator tests, ten writing functions) each need a confirmation. Clearing
   codes has run successfully on a car; the actuator tests and the writing functions have never been run on one, so do not use them on yours. Details in [Safety](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Safety).
 - **Private by default.** Nothing leaves your computer unless you choose to send a short report when something goes wrong; what it holds,
   and what it never holds, is on [Privacy](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Privacy).
@@ -88,7 +88,7 @@ simulator profile and replaces your VIN: [Contributing a vehicle](https://github
 | | |
 |---|---|
 | **Works on a real car** | Scan of the PCM (engine and CVT answer from one address), SRS and instrument cluster; trouble codes, live data, freeze frame, emissions readiness, recorded drives, health report, JSON export, `.tar.gz` backup. 2015 Accord, GD101 in J2534 mode. Clearing trouble codes has also run successfully on a car, from a build from source: it needs a confirmation. |
-| **Simulator only** | SocketCAN, slcan, ELM327 and clones, K-line (ISO 14230, with its own screen in the app). Four actuator tests (radiator fan, A/C compressor clutch, 12 V battery fan, EVAP purge solenoid) and 8 writing functions (VTC learn, first stage of the CVT inclination-sensor learn, cluster maintenance resets), all allowlisted, confirmed and handing control back on error. **Never sent to a car.** In the release, behind a confirmation at each step. A phone gateway for an iPhone exists in the source, each action behind a confirmation; the app is not published. |
+| **Simulator only** | SocketCAN, slcan, ELM327 and clones, K-line (ISO 14230, with its own screen in the app). Four actuator tests (radiator fan, A/C compressor clutch, 12 V battery fan, EVAP purge solenoid) and 10 writing functions (VTC learn, first stage of the CVT inclination-sensor learn, cluster maintenance resets, brake pad maintenance mode), all allowlisted, confirmed and handing control back on error. **Never sent to a car.** In the release, behind a confirmation at each step. A phone gateway for an iPhone exists in the source, each action behind a confirmation; the app is not published. |
 | **Not covered** | ABS and power steering did not answer from the connector on this car. This PCM refuses direct memory reads (a permanent calibration bit), so engine maps come from live data, not stored tables. 113 of the 182 systems use the older K-line or Honda's own older protocol (the K-line client exists; for the older protocol there is only a session probe in the source, and an ELM327 cannot speak it). Reflash, key and immobilizer functions and the second CVT learn stage are not built. Linux is the best-tested platform; both Windows builds have run on a real Windows machine, one of them against a car. |
 
 Field notes from the car (the misfires with no code, the ABS that never answered, the memory-read wall) are in [How it was built](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/How-It-Was-Built). Details per vehicle: [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles).

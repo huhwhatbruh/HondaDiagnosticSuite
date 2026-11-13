@@ -171,13 +171,50 @@ pub struct Write {
     pub timeout_s: f64, // HDS's poll window when poll_ms is non-zero; hondascan's safety bound where HDS has none
     pub conditions: &'static [&'static str], // names in actuator::CONDITIONS, all must hold (empty: HDS checks none)
     pub session: Option<u8>,           // session HDS enters before the routine; None: HDS does not change session
+    /// Send `10 01` after the run. False where HDS only ends its comms and lets the ECU's S3 timer drop the session (pad mode: a
+    /// mode tied to the extended session must not be cancelled by us).
+    pub end_session: bool,
     pub check_dtcs: bool,              // whether HDS checks stored DTCs before this function
     pub vin_system: Option<&'static str>, // read F190 from this system instead (meter does not answer F190)
     pub source: &'static str,          // where HDS defines it
     pub read_back: &'static str,       // what the read-back is, for the person
 }
 
-pub const WRITES: [Write; 8] = [
+/// The source note both pad-mode writes share; `$entry` is the Enter_Start/Leave_Start function and `$id` its routine.
+macro_rules! pad_source {
+    ($entry:expr, $id:expr) => {
+        concat!(
+            "CANABS_BRAKEPAD.TestMode (ABS.umf, entry 0x1f574; decompiled/ABS.pseudo.txt 10436-10450) -> SelectMode sub_1f5c0 (10453-10498: offered only when HUTILS.IsAnyPpidEnabled(0x4009); PPID 0x4009 is CANABS DID 0x4009, the integrated-EPB data block: ACLB, ACRB, ESS, BATV_L, BATV_R, CPS1, CPS2 in pids rows 5299-5311, can_signal_parts) -> ",
+            $entry,
+            " -> StartMsg sub_1f730 (10497-10552: CM.DiagSessionControl(3), then HONDA ABS,VB must exceed 0x2710 = 10 V) -> ModeChange sub_1f99a (10554-10600: CM.RoutineControl2WithStatus(1, ", $id, ", 0, &buf, 6), then (3, ...) until buffer byte 2 is not 0x7F; the start refused or status 0x80 is HDS's failure screen). HDS reads no old value; hondascan reads DID 0x4009 first as its stand-in for the PPID 0x4009 gate and stores it (UNCONFIRMED that a car's PPID configuration and a live read of that DID agree; a car whose ABS refuses it is refused here and the error says why). HDS ends its comms without a session change, so end_session is false. HDS fails only on 0x80, hondascan requires 0 as the meter writes do (stricter; the success value is unconfirmed on a car)"
+        )
+    };
+}
+
+/// What the two pad-mode writes (`epb_pad_enter`, `epb_pad_leave`) have in common; each sets its own key, name, routine and texts.
+const PAD_MODE: Write = Write {
+    key: "",
+    system: "CANABS",
+    name: "",
+    start: &[],
+    stop: None,
+    monitor: None,
+    old: OldValue { did: 0x4009, offset: 15, len: 1, label: "ABS,ACLB (left parking-brake apply counter)" },
+    proof: Proof::Status(RoutineStatus { pending: 0x7F, success: 0 }),
+    old_allowed: &[],
+    wait_s: 0.0,
+    poll_ms: 500,
+    timeout_s: 60.0,
+    conditions: &["battery_10"],
+    session: Some(3),
+    end_session: false,
+    check_dtcs: false,
+    vin_system: Some("CANFI"),
+    source: "",
+    read_back: "",
+};
+
+pub const WRITES: [Write; 10] = [
     Write {
         key: "evtc_learn",
         system: "CANFI",
@@ -193,6 +230,7 @@ pub const WRITES: [Write; 8] = [
         timeout_s: 10.0,
         conditions: &["engine_off", "park"],
         session: Some(3),
+        end_session: true,
         check_dtcs: true,
         vin_system: None,
         source: "EVTCLEARN.LearnSub (PGMFI_INSP 20307-20350): CM.IgnMonitor ignition-off/on prompts (20295-20296), CM.DiagSessionControl(3), CM.RoutineControl2WithStatus(1, 0x218, 1, &{2}, 1), DP.Wait(0x989680) = 10 s, then PGM-FI,EVTCZPEND == 1; the stop is only in LearnSub's l8_0 path; evtclearn_8_13.$CODE (20265-20296): CM.ChkDtc (0xa1e5) and PGM_FI_UTILS.ShiftCheck (0x589d): EngNotRun (0x56ec, PGM-FI,NE == 0) + ATNP == 1; menu: pgmfi.umf sub_13e1 (entry 0x13e1, seed-key decompile) adds E-VTC only when IsVehicleCan() and both PARAM_REC lookups PGM-FI,EVTCZPEND and PGM-FI,HEVOPSTAT resolve (database lookups after CM.EndComms); both are defined for CANFI system 35, the car's system",
@@ -213,6 +251,7 @@ pub const WRITES: [Write; 8] = [
         timeout_s: 8.0,
         conditions: &["cvt_park", "cvt_engine_off"],
         session: Some(3),
+        end_session: true,
         check_dtcs: true,
         vin_system: None,
         source: "CVT_ISL.InitialLearn (EAT_SOL_TST 4479-4485) -> sub_af69(0) (4382-4465) -> sub_abf4 (4270-4380): CM.DisplayAllDtcs == 0, sub_ab41 uses CVT,ATPP == 1 (4235-4268), sub_aa62 uses CVT,NEW == 0 (4198-4233), CM.DiagSessionControl(3), then CM.RoutineControl(1, 0x1148, -1) for count 1 (4308-4310; no control bytes, CM 523-543); no stop anywhere in the procedure; polls CVT,SLPLMOD up to 0x7a1200 = 8 s (4336-4375; the loop itself has no wait, hondascan paces it at 100 ms), success 2/18, error 3/19 then sub_b3b7 reads CVT,SLPLERR (4487-4528); menu: ATFT.CANCVTMenu (ATM.umf entry 0x137d) adds CVT_ISL.TestMode when find_data('PARAM_REC','CVT,SLOPE0') resolves; SLOPE0 is CANCVT DID 0x2340 byte 23 bit 0x10. hondascan implements the first stage only: HDS then prompts ignition off/on and continues the count (4411-4413), which is not reproduced",
@@ -233,6 +272,7 @@ pub const WRITES: [Write; 8] = [
         timeout_s: 10.0,
         conditions: &[],
         session: None,
+        end_session: true,
         check_dtcs: false,
         vin_system: Some("CANFI"),
         source: "METERADJUST.TestMode (Meterapp 0x7ad1, lines 2419-2440) -> sub_796d (2382-2417) -> METERADJUST.MaintMinder (0x77b0, 2341-2358) -> sub_7231 (2207-2315; item A routine 0x7021 at line 2212) -> METERADJUST.Reset (0x6667, 1867-1887) -> sub_65f9 (0x65f9, 1840-1866): CM.RoutineControl(1, g_370, -1) then CM.RoutineControlWithStatus(3, g_370, -1, &l_2, 6) until the status is not 0x7F; 0 is complete and anything else fails. No RoutineControl stop, no session change and no DTC/engine/park check in this procedure. Status layout: test.dll FUN_1001393d case 0x134 drops the CAN header and 2 payload bytes (vcomms_decomp.c 15630-15635), so CM sees 70 21 <status> and sub_65f9 checks byte 2; on the wire the positive reply is 71 03 70 21 <status>. Executed by tools/meterstatus.py. Menu gate: METERADJUST.TestMode needs METER,FNC_USSM == 1 or FNC_EUSM == 1 (2419-2425); the car's 22 7010 byte 11 = 0x80 gives FNC_USSM = 1, FNC_EUSM = 0. CST_USS_RDCALC (0x70A9 byte 11 bit 0x80) is unsupported (7F 22 31), so sub_796d binds MaintMinder, not MaintMinder_Days. Item A is always offered; items 1-7 are offered only when their enable bit in 0x7068 byte 7/8 is set (the car's byte 7 = 0xF8 enables 1-5). This build implements item A and items 1-5 (meter_maint_1..meter_maint_5); items 6-7 are in HDS's table but their bits are clear on this car, so they are not whitelisted.",
@@ -253,6 +293,7 @@ pub const WRITES: [Write; 8] = [
         timeout_s: 10.0,
         conditions: &["meter_item1_enabled"],
         session: None,
+        end_session: true,
         check_dtcs: false,
         vin_system: Some("CANFI"),
         source: "USM_Item (Meterapp sub_7231, 2207-2315) binds item 1 to routine 0x7022 with old value METER,OUT_USS_IT1RDI (item 1's record, lines 2215-2219) and offers it only when its enable bit reads 1: the CM.FastReader loop over OUT_USS_IT1EN..IT7EN (2264-2286) sets each record's enable = value == 1, so the write's condition meter_item1_enabled is that gate. The reset is item A's procedure (meter_maint_a's source has the chain, the status layout and the FNC_USSM menu gate): METERADJUST.Reset (0x6667, 1867-1887) -> sub_65f9 (0x65f9, 1840-1866), CM.RoutineControl(1, g_370, -1) then CM.RoutineControlWithStatus(3, g_370, -1, &l_2, 6) until the status is not 0x7F; 0 is complete and anything else fails; no stop, no session change, no DTC/engine/park check. The car's DID 0x7068 byte 7 = 0xF8 enables items 1-5. Item text: HDS help screen 4R_MET_USM_ITEM_1, 'Rotate tires, and check tire inflation and condition.'",
@@ -273,6 +314,7 @@ pub const WRITES: [Write; 8] = [
         timeout_s: 10.0,
         conditions: &["meter_item2_enabled"],
         session: None,
+        end_session: true,
         check_dtcs: false,
         vin_system: Some("CANFI"),
         source: "USM_Item (Meterapp sub_7231, 2207-2315) binds item 2 to routine 0x7023 with old value METER,OUT_USS_IT2RDI (item 2's record, lines 2220-2224) and offers it only when its enable bit reads 1 (the FastReader loop, 2264-2286); the write's condition meter_item2_enabled is that gate. The reset is item A's procedure (see meter_maint_a): Reset -> sub_65f9, RoutineControl(1) then RoutineControlWithStatus(3) until the status is not 0x7F; no stop, no session change, no DTC/engine/park check. The car's 0x7068 byte 7 = 0xF8 enables items 1-5. Item text: HDS help screen 4R_MET_USM_ITEM_2, 'Replace air cleaner element. Replace the dust and pollen filter. Inspect drive belt.'",
@@ -293,6 +335,7 @@ pub const WRITES: [Write; 8] = [
         timeout_s: 10.0,
         conditions: &["meter_item3_enabled"],
         session: None,
+        end_session: true,
         check_dtcs: false,
         vin_system: Some("CANFI"),
         source: "USM_Item (Meterapp sub_7231, 2207-2315) binds item 3 to routine 0x7024 with old value METER,OUT_USS_IT3RDI (item 3's record, lines 2225-2229) and offers it only when its enable bit reads 1 (the FastReader loop, 2264-2286); the write's condition meter_item3_enabled is that gate. The reset is item A's procedure (see meter_maint_a): Reset -> sub_65f9, RoutineControl(1) then RoutineControlWithStatus(3) until the status is not 0x7F; no stop, no session change, no DTC/engine/park check. The car's 0x7068 byte 7 = 0xF8 enables items 1-5. Display note: while OUT_USS_IT3JDGMETH (byte 9 bit 0x02) = 0 and FNC_MISSION != 0, sub_7231 displays the item's distance as '----' (2289-2299) — display only, the reset is the same procedure; the car's byte 9 = 0x00 and its mission is the CVT, so HDS shows the dash. Item text: HDS help screen 4R_MET_USM_ITEM_3, 'Replace transmission fluid.'",
@@ -313,6 +356,7 @@ pub const WRITES: [Write; 8] = [
         timeout_s: 10.0,
         conditions: &["meter_item4_enabled"],
         session: None,
+        end_session: true,
         check_dtcs: false,
         vin_system: Some("CANFI"),
         source: "USM_Item (Meterapp sub_7231, 2207-2315) binds item 4 to routine 0x7025 with old value METER,OUT_USS_IT4RDI (item 4's record, lines 2230-2234) and offers it only when its enable bit reads 1 (the FastReader loop, 2264-2286); the write's condition meter_item4_enabled is that gate. The reset is item A's procedure (see meter_maint_a): Reset -> sub_65f9, RoutineControl(1) then RoutineControlWithStatus(3) until the status is not 0x7F; no stop, no session change, no DTC/engine/park check. The car's 0x7068 byte 7 = 0xF8 enables items 1-5. Item text: HDS help screen 4R_MET_USM_ITEM_4, 'Replace spark plugs. Inspect the valve clearance (cold). Replace timing belt and inspect water pump.'",
@@ -333,10 +377,30 @@ pub const WRITES: [Write; 8] = [
         timeout_s: 10.0,
         conditions: &["meter_item5_enabled"],
         session: None,
+        end_session: true,
         check_dtcs: false,
         vin_system: Some("CANFI"),
         source: "USM_Item (Meterapp sub_7231, 2207-2315) binds item 5 to routine 0x7026 with old value METER,OUT_USS_IT5RDI (item 5's record, lines 2235-2239) and offers it only when its enable bit reads 1 (the FastReader loop, 2264-2286); the write's condition meter_item5_enabled is that gate. The reset is item A's procedure (see meter_maint_a): Reset -> sub_65f9, RoutineControl(1) then RoutineControlWithStatus(3) until the status is not 0x7F; no stop, no session change, no DTC/engine/park check. The car's 0x7068 byte 7 = 0xF8 enables items 1-5. Item text: HDS help screen 4R_MET_USM_ITEM_5, 'Replace engine coolant.'",
         read_back: "routine 0x7026 status: 0x7F while running, 0 when HDS calls it complete (wire 71 03 70 26 <status>); old value METER,OUT_USS_IT5RDI in DID 0x7068 bytes 20-21 (the car read 0x7FFF = 32767 in the recording)",
+    },
+
+    Write {
+        key: "epb_pad_enter",
+        name: "Brake pad maintenance mode: enter (integrated electric parking brake)",
+        start: &[ROUTINE_CONTROL, 0x01, 0x40, 0xCF],
+        monitor: Some(&[ROUTINE_CONTROL, 0x03, 0x40, 0xCF]),
+        source: pad_source!("Enter_Start sub_1fbc7 (10615-10622: g_bEnter = 1, routine 0x40CF)", "0xCF"),
+        read_back: "routine 0x40CF status: 0x7F while running, 0 when complete (wire 71 03 40 CF <status>); the caliper motors retract so the pads can be changed; DID 0x4009 byte 15 stored before the start",
+        ..PAD_MODE
+    },
+    Write {
+        key: "epb_pad_leave",
+        name: "Brake pad maintenance mode: leave (integrated electric parking brake)",
+        start: &[ROUTINE_CONTROL, 0x01, 0x40, 0xD0],
+        monitor: Some(&[ROUTINE_CONTROL, 0x03, 0x40, 0xD0]),
+        source: pad_source!("Leave_Start sub_1fbf1 (10624-10631: g_bEnter = 0, routine 0x40D0)", "0xD0"),
+        read_back: "routine 0x40D0 status: 0x7F while running, 0 when complete (wire 71 03 40 D0 <status>); the calipers return to normal operation; DID 0x4009 byte 15 stored before the start",
+        ..PAD_MODE
     },
 ];
 

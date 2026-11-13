@@ -74,6 +74,23 @@ fn nrc(sid: u8, code: u8) -> Vec<u8> {
 /// requestSequenceError (a completed one does not block: HDS's USM_Item menu resets several items in one session), and
 /// a status poll or stop for an id other than the one started is a requestSequenceError. `needs_extended` is false for
 /// the meter reset, which HDS sends in the default session.
+/// The refusals a fake routine answers with where the real ECU's are known.
+#[derive(Debug, Clone, Copy)]
+pub struct RoutineNrc {
+    /// A request in the default session when the routine `needs_extended`.
+    pub default_session: u8,
+    /// A status poll (`31 03`) when nothing was started.
+    pub idle_poll: u8,
+}
+
+impl RoutineNrc {
+    /// Serviced-in-extended-only (0x7F) and requestSequenceError (0x24): the PCM and CVT as modelled, not measured.
+    pub const MODELLED: RoutineNrc = RoutineNrc { default_session: 0x7F, idle_poll: 0x24 };
+    /// Measured by a 2019 Odyssey owner on its VSA (57114-THR-A040, 2026-11-13): in session 01 `31 03 40CF` is `7F 31 31`, after
+    /// `10 03` it is `7F 31 22`.
+    pub const ODYSSEY_VSA: RoutineNrc = RoutineNrc { default_session: 0x31, idle_poll: 0x22 };
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Routine {
     pub ids: &'static [u16],
@@ -85,6 +102,7 @@ pub struct Routine {
     pub wait_s: f64,
     pub status: Option<u8>,
     pub needs_extended: bool,
+    pub nrc: RoutineNrc,
 }
 
 /// A strict fake ECU. `memory` ({start: bytes}) makes it answer ReadMemoryByAddress the strict way: only the formats in
@@ -283,7 +301,7 @@ impl SimEcu {
             return nrc(0x31, 0x13);
         }
         if r.needs_extended && !self.extended {
-            return nrc(0x31, 0x7F);
+            return nrc(0x31, r.nrc.default_session);
         }
         let (control, rid) = (req[1], (req[2] as u16) << 8 | req[3] as u16);
         if !r.ids.contains(&rid) {
@@ -307,7 +325,7 @@ impl SimEcu {
             }
             0x03 => {
                 let Some(status) = r.status else { return nrc(0x31, 0x12) };
-                let Some((sid, t)) = self.routine_started else { return nrc(0x31, 0x24) };
+                let Some((sid, t)) = self.routine_started else { return nrc(0x31, r.nrc.idle_poll) };
                 if sid != rid {
                     return nrc(0x31, 0x24); // another routine's status: HDS polls the one it started
                 }
@@ -663,9 +681,9 @@ fn accord() -> Vec<SimEcu> {
 /// The recorded car on the J2534 path: which database systems the PCM (PGM-FI and CVT), the SRS and the meter are.
 const J2534_CAR: &[(u32, &[&str])] = &[(0x0E, &["CANFI", "CANCVT"]), (0x53, &["CANSRS"]), (0x60, &["CAN_METER"])];
 
-pub const PROFILE_NAMES: [&str; 14] = [
+pub const PROFILE_NAMES: [&str; 15] = [
     "accord2015", "accord2015-ram", "accord2015-ram-locked", "accord2015-io", "accord2015-write", "accord2015-write-cvt",
-    "accord2015-write-meter", "accord2015-stored", "drive", "evps", "accord2015-gd101", "accord2015-gd101-j2534",
+    "accord2015-write-meter", "accord2015-write-pad", "accord2015-stored", "drive", "evps", "accord2015-gd101", "accord2015-gd101-j2534",
     "accord2015-gd101-j2534-drive-home", "empty",
 ];
 
@@ -727,7 +745,7 @@ pub fn profile(name: &str) -> Result<Vec<SimNode>, String> {
                 &[],
             );
             e.values = Values::from([((0x2610, 6), vec![0, 0]), ((0x2661, 7), vec![0x10])]); // NE 0 rpm; ATNP = P-N
-            e.routine = Some(Routine { ids: &[0x218], option: Some(0x02), did: 0x266C, offset: 37, mask: 0x80, value: 0x80, wait_s: 10.0, status: None, needs_extended: true });
+            e.routine = Some(Routine { ids: &[0x218], option: Some(0x02), did: 0x266C, offset: 37, mask: 0x80, value: 0x80, wait_s: 10.0, status: None, needs_extended: true, nrc: RoutineNrc::MODELLED });
             scripted(vec![e])
         }
         // The CVT with the second whitelisted write: CVT_ISL initial learn stage one (routine 0x1148, no option bytes),
@@ -741,7 +759,7 @@ pub fn profile(name: &str) -> Result<Vec<SimNode>, String> {
                 ((0x2340, 29), vec![0]),   // SLPLMOD = 0
                 ((0x2340, 30), vec![0]),   // SLPLERR = 0
             ]);
-            e.routine = Some(Routine { ids: &[0x1148], option: None, did: 0x2340, offset: 29, mask: 0xFF, value: 2, wait_s: 0.0, status: None, needs_extended: true });
+            e.routine = Some(Routine { ids: &[0x1148], option: None, did: 0x2340, offset: 29, mask: 0xFF, value: 2, wait_s: 0.0, status: None, needs_extended: true, nrc: RoutineNrc::MODELLED });
             scripted(vec![e])
         }
         // The meter with the third whitelisted write family: US smart maintenance resets, items A and 1-5 (routines
@@ -755,8 +773,19 @@ pub fn profile(name: &str) -> Result<Vec<SimNode>, String> {
             meter.values = Values::from([
                 ((0x7010, 11), vec![0x80]), // FNC_USSM = 1: the menu gate HDS lists the resets under
             ]);
-            meter.routine = Some(Routine { ids: &METER_USM_IDS, option: None, did: 0x7068, offset: 10, mask: 0, value: 0, wait_s: 0.0, status: Some(0), needs_extended: false });
+            meter.routine = Some(Routine { ids: &METER_USM_IDS, option: None, did: 0x7068, offset: 10, mask: 0, value: 0, wait_s: 0.0, status: Some(0), needs_extended: false, nrc: RoutineNrc::MODELLED });
             scripted(vec![pcm, meter])
+        }
+        // The ABS with the integrated electric parking brake's pad maintenance mode (CANABS_BRAKEPAD, routines 0x40CF enter and
+        // 0x40D0 leave, extended session, status byte as the proof) and the DID 0x4009 gate HDS checks first (PPID 0x4009),
+        // plus the PCM whose F190 answers the VIN gate. The battery (DID 0x4004 byte 20, ABS,VB) reads 12.6 V. A real ECU
+        // runs the motors for seconds; the fake completes at once.
+        "accord2015-write-pad" => {
+            let pcm = SimEcu::new(0x10, "CANFI", &[(0xF190, b"1HGCR2F3XFA000000")], &[]);
+            let mut abs = SimEcu::new(0x28, "CANABS", &[(0x4000, &[1]), (0x4004, &[0; 56]), (0x4009, &[0; 56])], &[]);
+            abs.values = Values::from([((0x4004, 20), vec![126])]);
+            abs.routine = Some(Routine { ids: &[0x40CF, 0x40D0], option: None, did: 0x4009, offset: 15, mask: 0, value: 0, wait_s: 0.0, status: Some(0), needs_extended: true, nrc: RoutineNrc::ODYSSEY_VSA });
+            scripted(vec![pcm, abs])
         }
         // The EPS alone with its stored-only code (the default profile's EPS DTC): the health aggregate must call
         // this car's faults "no" (nothing confirmed or pending) and its history "yes", and still exit 1 — a stored

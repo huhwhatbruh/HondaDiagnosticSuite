@@ -60,12 +60,13 @@ pub struct Condition {
 // ATNP signal reads 1 (park/neutral), else HDS asks the person to put the car in park; BattVltgChk(lo, hi): battery in millivolts.
 // The CVT checks are CVT_ISL's own (`sub_ab41`/`sub_aa62`, EAT_SOL_TST 4198-4268): on CAN it reads CVT,ATPP (not ATNP) and
 // CVT,NEW (engine speed) instead of PGM-FI,NE.
-pub const CONDITIONS: [Condition; 13] = [
+pub const CONDITIONS: [Condition; 14] = [
     Condition { name: "engine_off", symbols: &["NE"], text: "engine not running (HDS EngNotRun: engine speed 0, ignition on)", check: Check::Between("NE", 0.0, 0.0) },
     Condition { name: "stationary", symbols: &["VSP"], text: "vehicle speed 0", check: Check::Between("VSP", 0.0, 0.0) },
     Condition { name: "park", symbols: &["ATNP"], text: "transmission in park (HDS ShiftCheck: ATNP = 1)", check: Check::Eq("ATNP", 1) },
     Condition { name: "ac_off", symbols: &["ACS"], text: "air conditioner switch off (HDS checks PGM-FI,ACS = 0)", check: Check::Eq("ACS", 0) },
     Condition { name: "battery_10_5", symbols: &["VB"], text: "battery 10.5-20 V (HDS BattVltgChk 0x2904-0x4E20 mV)", check: Check::Between("VB", 10.5, 20.0) },
+    Condition { name: "battery_10", symbols: &["VB"], text: "battery above 10 V (HDS CANABS_BRAKEPAD StartMsg: HONDA ABS,VB must exceed 0x2710 mV)", check: Check::Between("VB", 10.01, 20.0) }, // HDS refuses at 10.0 V or below, so 10.0 itself fails: 10.01 is the lowest reading the 0.1 V signal can show above it
     Condition { name: "battery_8", symbols: &["VB"], text: "battery 8-20 V (HDS BattVltgChk 0x1F40-0x4E20 mV)", check: Check::Between("VB", 8.0, 20.0) },
     Condition { name: "cvt_park", symbols: &["ATPP"], text: "transmission in park (HDS CVT_ISL sub_ab41: CVT,ATPP = 1)", check: Check::Eq("ATPP", 1) },
     Condition { name: "cvt_engine_off", symbols: &["NEW"], text: "engine not running (HDS CVT_ISL sub_aa62: CVT,NEW = 0)", check: Check::Between("NEW", 0.0, 0.0) },

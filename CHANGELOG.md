@@ -3,6 +3,16 @@
 All notable changes to the release. Format after [Keep a Changelog](https://keepachangelog.com/); versions follow
 [Semantic Versioning](https://semver.org/) from 1.0.0 on. Each release's page has the archives and their checksums.
 
+## [0.7.0]
+
+### Added
+- **Brake pad maintenance mode for cars with an electric parking brake in the VSA/ABS unit** (suggested by a 2019 Odyssey owner
+  replacing rear pads). Two new writing functions, `epb_pad_enter` and `epb_pad_leave`, do what Honda's diagnostic software does:
+  they put the parking brake into pad-change mode and back to normal. Like every writing function they need your confirmation
+  and the car's VIN, the battery must be above 10 V, and the car must answer the check Honda's software makes before it offers
+  the function. Tested against a simulated car only; it has not been run on a real car yet. Cars with a separate parking brake
+  unit are not covered.
+
 ## [0.6.2]
 
 ### Changed

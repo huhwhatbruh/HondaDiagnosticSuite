@@ -122,7 +122,12 @@ impl WriteRun {
         }
 
         // The old value first: HDS's own first check (count 0 for CVT_ISL) and the read-back both need it stored.
-        let old = hc.client(self.address).read_did(self.write.old.did)?;
+        let old = hc.client(self.address).read_did(self.write.old.did).map_err(|e| {
+            RunError::Value(format!(
+                "could not read DID {:04X} ({}) before the write: {e}. HDS reads it (or checks the vehicle's PPID for it) before it offers this function",
+                self.write.old.did, self.write.old.label
+            ))
+        })?;
         let Some(old_value) = self.write.old_value(&old) else {
             return Err(RunError::Value(format!(
                 "DID {:04X} is {} bytes and has no {} byte(s) at {} for {}",
@@ -369,8 +374,9 @@ impl WriteRun {
             Err(r) => format!("DID {:04X} could not be read back ({r})", self.write.old.did),
         };
         let msg = format!(
-            "{e}; the start may have reached the ECU, so the routine was stopped and session 01 restored. Afterwards {shows}. \
+            "{e}; the start may have reached the ECU, so the routine was stopped{}. Afterwards {shows}. \
              Check the car before running {} again",
+            if self.write.end_session { " and session 01 restored" } else { " (the session is left to time out, as HDS does)" },
             self.write.key
         );
         hc.note(&format!("write {}: outcome unknown. {msg}", self.write.key));
@@ -385,7 +391,7 @@ impl WriteRun {
     }
 
     fn leave(&mut self, hc: &mut HondaCan, left_session: bool) {
-        if !left_session {
+        if !left_session || !self.write.end_session {
             return;
         }
         if let Err(e) = hc.client(self.address).session(0x01) {
