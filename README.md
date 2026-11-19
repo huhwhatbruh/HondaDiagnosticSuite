@@ -7,7 +7,7 @@ HDS is the software Honda dealers use. It only runs on Windows. This does the re
 > **Confirmed on a 2015 Accord (K24W1, CVT); a 2019 and a 2021 Civic have been scanned over an ELM327 with partial results** (see [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles)). I still need more Hondas:
 > **[open a vehicle report](../../issues/new?template=vehicle_report.md)**
 
-[Download v0.7.0](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.7.0) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
+[Download v0.8.0](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.8.0) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
 
 
 A generic OBD-II reader talks to the emissions computer and knows a few standard codes. A modern Honda carries a dozen or more
@@ -57,9 +57,10 @@ The desktop app `hondascan-gui` wraps the same scanner.
 
 ## Install and build
 
-Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.7.0) has three archives:
-`hondascan-0.7.0-linux-x86_64.tar.gz`, `hondascan-0.7.0-windows-x86_64.zip` (with the desktop app) and
-`hondascan-0.7.0-windows-i686.zip` (command line only, for 32-bit J2534 DLLs). There is nothing to install for the program
+Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.8.0) has four archives:
+`hondascan-0.8.0-linux-x86_64.tar.gz`, `hondascan-0.8.0-windows-x86_64.zip` (with the desktop app),
+`hondascan-0.8.0-windows-i686.zip` (command line only, for 32-bit J2534 DLLs) and
+`hondascan-0.8.0-darwin-aarch64.tar.gz` (macOS on Apple silicon, `Hondascan.app`; new in 0.8.0 and not yet started on a Mac, see the wiki's Getting started). There is nothing to install for the program
 itself: no Python, no Rust, no Wine. Which Linux and Windows versions run it, the udev rule, the C compiler the GD101's J2534 mode
 needs and the serial and CAN set-up are on [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started).
 
@@ -97,10 +98,14 @@ Field notes from the car (the misfires with no code, the ABS that never answered
 
 - **Other Hondas, any adapter.** A scan and a code read is already valuable: [Contributing a vehicle](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Contributing-a-Vehicle).
 - **Windows testing.** Both builds have run on real Windows, one against a car. A scan and a code read with the adapter you have, especially a 32-bit J2534 DLL with the 32-bit build, tells us what is left.
-- **macOS.** Untried; the serial and J2534 code is the Unix path, so it may be close.
+- **macOS.** Run the new archive on a Mac and tell us whether it starts: it was cross-built and checked by structure only. A source build on a Mac lists USB serial ports and has opened an XHorse M-VCI (see Contributors); an ELM327 on a Mac is untried.
 - **Bugs and ideas:** the [issue tracker](../../issues).
 
 *We all have a right to repair. Nothing on a car should be proprietary.*
+
+## Contributors
+
+- [@Oddiesea](https://github.com/Oddiesea): macOS serial-port listing and the XHorse M-VCI adapter (`mvci:`), tested on a 2018 Fit/Jazz.
 
 ## License and disclaimer
 

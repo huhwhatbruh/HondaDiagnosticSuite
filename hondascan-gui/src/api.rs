@@ -281,7 +281,7 @@ pub fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, serde_json::
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
-pub struct Port { pub device: String, pub product: String, pub gd101: bool }
+pub struct Port { pub device: String, pub product: String, pub gd101: bool, pub mvci: bool }
 
 #[cfg(test)]
 mod tests {

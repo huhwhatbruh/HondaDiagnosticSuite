@@ -9,6 +9,7 @@ pub mod elm_kline;
 pub mod elm_link;
 pub mod isotp;
 pub mod j2534;
+pub mod mvci;
 pub mod ports;
 pub mod replay;
 pub mod serial;
@@ -173,6 +174,15 @@ pub use ports::{modem_manager_warning, serial_ports};
 
 pub const GD101_USB_ID: (&str, &str) = ("e327", "2534");
 
+/// The callout device whose USB product name is `M-VCI`. Separate from `find_port`, which stays the GD101 and generic-ELM lookup.
+pub fn find_mvci() -> Result<String, OpenError> {
+    serial_ports()
+        .into_iter()
+        .find(|(_, _, _, name)| name.eq_ignore_ascii_case("M-VCI"))
+        .map(|(dev, _, _, _)| dev)
+        .ok_or_else(|| OpenError { kind: "FileNotFoundError", message: "no XHorse M-VCI found; plug it in, or give the port, e.g. mvci:/dev/cu.usbserial-XXXX".into() })
+}
+
 pub fn find_port(usb_id: Option<(&str, &str)>) -> Result<String, OpenError> {
     let mut ports = serial_ports();
     match usb_id {
@@ -190,7 +200,7 @@ pub fn find_port(usb_id: Option<(&str, &str)>) -> Result<String, OpenError> {
 }
 
 /// `socketcan:IFACE`, `slcan:PORT[@BITRATE]`, `sim[:PROFILE]` and (as they are ported) `elm`, `gd101`, `j2534`, `gd101-j2534`,
-/// `elm-kline`, `elm-obd9141`, `elm-obd` (tries each K-line protocol), `replay:FILE`.
+/// `elm-kline`, `elm-obd9141`, `elm-obd` (tries each K-line protocol), `mvci`, `replay:FILE`.
 pub fn open_adapter(spec: &str, log: Option<Arc<can::CaptureLog>>) -> Result<Arc<dyn Adapter>, OpenError> {
     let (kind, arg) = spec.split_once(':').unwrap_or((spec, ""));
     let (path, num) = arg.split_once('@').unwrap_or((arg, ""));
@@ -258,9 +268,14 @@ pub fn open_adapter(spec: &str, log: Option<Arc<can::CaptureLog>>) -> Result<Arc
             let bus = replay::ReplayBus::open(arg, log).map_err(io)?;
             Ok(Arc::new(RawCanAdapter::new(Arc::new(bus), "ReplayBus")))
         }
+        "mvci" => {
+            let port = if path.is_empty() { find_mvci()? } else { path.to_string() };
+            let bus = mvci::MvciBus::open(&port, log).map_err(|e| OpenError { kind: "MvciError", message: e.to_string() })?;
+            Ok(Arc::new(RawCanAdapter::new(Arc::new(bus), "MvciBus")))
+        }
         _ => Err(OpenError {
             kind: "ValueError",
-            message: format!("unknown adapter {spec:?} (socketcan:, slcan:, j2534:, elm:, elm-kline:, elm-kline5:, elm-obd9141:, gd101-obd9141, elm-obd:, gd101-obd, gd101, gd101-j2534, sim, replay:)"),
+            message: format!("unknown adapter {spec:?} (socketcan:, slcan:, j2534:, elm:, elm-kline:, elm-kline5:, elm-obd9141:, gd101-obd9141, elm-obd:, gd101-obd, gd101, gd101-j2534, mvci, sim, replay:)"),
         }),
     }
 }

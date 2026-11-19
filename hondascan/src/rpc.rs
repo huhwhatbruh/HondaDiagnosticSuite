@@ -138,7 +138,7 @@ impl Session {
     }
 
     pub fn ports(&self) -> Value {
-        serial_ports().into_iter().map(|(d, v, p, prod)| json!({"device": d, "vid": v, "pid": p, "product": prod, "gd101": (v.as_str(), p.as_str()) == GD101_USB_ID})).collect::<Vec<_>>().into()
+        serial_ports().into_iter().map(|(d, v, p, prod)| json!({"device": d, "vid": v, "pid": p, "product": prod, "gd101": (v.as_str(), p.as_str()) == GD101_USB_ID, "mvci": prod.eq_ignore_ascii_case("M-VCI")})).collect::<Vec<_>>().into()
     }
 
     /// One request; an error it returns is also kept for the car report (errlog.rs), with the adapter's kind, never its port.

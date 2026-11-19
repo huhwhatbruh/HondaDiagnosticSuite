@@ -3,6 +3,19 @@
 All notable changes to the release. Format after [Keep a Changelog](https://keepachangelog.com/); versions follow
 [Semantic Versioning](https://semver.org/) from 1.0.0 on. Each release's page has the archives and their checksums.
 
+## [0.8.0]
+
+### Added
+- **A macOS archive for Apple silicon**, `hondascan-0.8.0-darwin-aarch64.tar.gz`: `Hondascan.app` (macOS 12 or newer) with the desktop app, its Qt
+  and the command line inside. It is cross-built and checked by structure (every executable has an arm64 slice and a signature, every
+  framework it loads is inside), **but nobody has started it on a Mac yet**. It is signed ad hoc and not notarized, so macOS asks before the
+  first start. Serial speeds above 230400 baud on macOS are unconfirmed.
+- **macOS lists USB serial ports, and the XHorse M-VCI (Mini-VCI) cable works as an adapter** (`mvci:`), by
+  [@Oddiesea](https://github.com/Oddiesea). The picker reads the USB tree with `ioreg` and lists the `/dev/cu.*` device with the
+  same vendor id, product id and product name Linux gives. The M-VCI is opened as raw 29-bit CAN at 500 kbit/s through
+  [rmvci](https://github.com/FletcherD/rmvci), with hondascan's own ISO-TP on top; it is recognised by the USB product name
+  `M-VCI`, not the FTDI ids that ELM327 cables share. Tested on a 2018 Fit/Jazz with an XHorse MVCI PRO J2534 clone.
+
 ## [0.7.0]
 
 ### Added

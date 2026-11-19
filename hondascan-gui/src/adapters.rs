@@ -13,6 +13,10 @@ pub fn adapter_list(ports: &[Port]) -> Vec<(String, String)> {
         .filter(|(s, _)| cfg!(target_os = "linux") || !s.starts_with("socketcan"))
         .map(|(s, l)| (s.to_string(), l.to_string())).collect();
     for p in ports {
+        if p.mvci {
+            v.push((format!("mvci:{}", p.device), format!("XHorse M-VCI · {}", p.device)));
+            continue;
+        }
         if p.gd101 {
             v.push((format!("gd101-j2534:{}", p.device), format!("GD101 J2534 · {}", p.device)));
             v.push((format!("elm:{}", p.device), format!("GD101 ELM · {}", p.device)));
@@ -33,8 +37,8 @@ mod tests {
 
     #[test]
     fn ports_follow_the_presets_and_custom_comes_last() {
-        let ports = [Port { device: "/dev/ttyACM0".into(), product: String::new(), gd101: true },
-                     Port { device: "/dev/ttyUSB0".into(), product: "OBDLink".into(), gd101: false }];
+        let ports = [Port { device: "/dev/ttyACM0".into(), product: String::new(), gd101: true, mvci: false },
+                     Port { device: "/dev/ttyUSB0".into(), product: "OBDLink".into(), gd101: false, mvci: false }];
         let l = adapter_list(&ports);
         let specs: Vec<&str> = l.iter().map(|(s, _)| s.as_str()).collect();
         assert_eq!(&specs[specs.len() - 8..], ["gd101-j2534:/dev/ttyACM0", "elm:/dev/ttyACM0", "elm-kline:/dev/ttyACM0", "elm-obd:/dev/ttyACM0",
@@ -42,5 +46,15 @@ mod tests {
         assert_eq!(l[l.len() - 4].1, "OBDLink · /dev/ttyUSB0");
         assert_eq!(l[l.len() - 3].1, "K-line (older body systems) · /dev/ttyUSB0");
         assert_eq!(l[l.len() - 2].1, "OBD-II K-line (cars before ~2008) · /dev/ttyUSB0");
+    }
+
+    #[test]
+    fn an_m_vci_is_its_own_row_and_not_an_elm() {
+        let ports = [Port { device: "/dev/cu.usbserial-A0000001".into(), product: "M-VCI".into(), gd101: false, mvci: true }];
+        let l = adapter_list(&ports);
+        let specs: Vec<&str> = l.iter().map(|(s, _)| s.as_str()).collect();
+        assert!(specs.contains(&"mvci:/dev/cu.usbserial-A0000001"));
+        assert!(specs.iter().all(|s| !s.starts_with("elm:") && !s.starts_with("elm-")), "{specs:?}");
+        assert_eq!(l.iter().find(|(s, _)| s.starts_with("mvci")).unwrap().1, "XHorse M-VCI · /dev/cu.usbserial-A0000001");
     }
 }

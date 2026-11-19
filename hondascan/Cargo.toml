@@ -1,6 +1,6 @@
 [package]
 name = "hondascan"
-version = "0.7.0"
+version = "0.8.0"
 description = "Honda diagnostics on Linux, using data decoded from HDS 3.105.12"
 edition = "2021"
 license = "GPL-3.0-or-later"
@@ -15,6 +15,7 @@ regex = "1"
 libloading = "0.8"
 csv = "1.4.0"
 chacha20poly1305 = "0.11.0"
+rmvci-core = { git = "https://github.com/FletcherD/rmvci", rev = "618491b4ecfe9caed91987e9457c2e6138b8ba38", default-features = false, features = ["serial"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
