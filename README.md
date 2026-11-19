@@ -2,7 +2,7 @@
 
 **A dealer-level diagnostic tool, built from real data. Free and open source.**
 
-HDS is the software Honda dealers use. It only runs on Windows. This does the reading side on a cheap USB adapter, and much faster. Built for Linux and Windows.
+HDS is the software Honda dealers use. It only runs on Windows. This does the reading side on a cheap USB adapter, and much faster. This works on Linux, Windows and MacOS.
 
 > **Confirmed on a 2015 Accord (K24W1, CVT); a 2019 and a 2021 Civic have been scanned over an ELM327 with partial results** (see [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles)). I still need more Hondas:
 > **[open a vehicle report](../../issues/new?template=vehicle_report.md)**
