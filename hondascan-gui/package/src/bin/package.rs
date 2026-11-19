@@ -580,9 +580,9 @@ fn main() -> Res<()> {
 
     let target_os = if cross { if windows { "windows" } else if mac { "macos" } else { "linux" } } else { std::env::consts::OS };
     let arch = target.as_deref().and_then(|t| t.split('-').next()).unwrap_or(std::env::consts::ARCH);
-    let os = if target_os == "macos" { "darwin" } else { target_os };   // the folder name, as before
+    let os = target_os;   // the folder name; the macOS one is `hondascan-<version>-macos` (Apple silicon only, so no arch in it)
     let version = env!("CARGO_PKG_VERSION");
-    let name = format!("hondascan-{version}-{os}-{arch}");
+    let name = if mac { format!("hondascan-{version}-macos") } else { format!("hondascan-{version}-{os}-{arch}") };
     let dist = here.join("dist");
     let out = dist.join(&name);
     let _ = std::fs::remove_dir_all(&out);

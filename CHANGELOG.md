@@ -3,6 +3,13 @@
 All notable changes to the release. Format after [Keep a Changelog](https://keepachangelog.com/); versions follow
 [Semantic Versioning](https://semver.org/) from 1.0.0 on. Each release's page has the archives and their checksums.
 
+## [0.8.1]
+
+### Changed
+- **The macOS archive is `hondascan-0.8.1-macos.tar.gz`** (it was `hondascan-0.8.0-darwin-aarch64.tar.gz`): the name says macOS, the same way the
+  others say Linux and Windows. It is still `Hondascan.app` for Apple silicon, macOS 12 or newer, and still not started on a Mac yet.
+- The README, the wiki and the program's own package text now say Linux, Windows and macOS everywhere they named the platforms.
+
 ## [0.8.0]
 
 ### Added

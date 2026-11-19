@@ -1,6 +1,6 @@
 # Honda Diagnostic Suite
 
-An open, native diagnostic tool for Honda vehicles, for Linux and Windows. Scan, trouble codes, live data,
+An open, native diagnostic tool for Honda vehicles, for Linux, Windows and macOS. Scan, trouble codes, live data,
 recorded drives and history, health report, clearing codes, actuator tests and writing functions (each behind a confirmation).
 
 Project page, wiki and issue tracker: https://github.com/huhwhatbruh/HondaDiagnosticSuite
