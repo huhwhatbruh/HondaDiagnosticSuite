@@ -50,10 +50,21 @@ pub fn data_dir() -> PathBuf {
     base.join("hondascan")
 }
 
-/// The summary.json a session wrote last (every minute), as a compact JSON string, or None if it is missing or cut short.
-fn saved_summary(folder: &str) -> Option<String> {
+/// The summary.json a session wrote last (every minute), closed as interrupted: `ended` is the time of its last sample,
+/// `end_reason` "interrupted", `duration_s` at least the span to that sample; everything it measured stays. summary.json
+/// and summary.md are written again in the session's folder (they said "still running"), and the result is returned as the
+/// compact JSON string the database keeps. None if the file is missing or cut short.
+fn settled_summary(folder: &str, ended: f64) -> Option<String> {
     let text = std::fs::read_to_string(Path::new(folder).join("summary.json")).ok()?;
-    let v: Value = serde_json::from_str(&text).ok()?;
+    let mut v: Value = serde_json::from_str(&text).ok()?;
+    let m = v.as_object_mut()?;
+    let span = m.get("started").and_then(Value::as_f64).map_or(0.0, |s| (ended - s).max(0.0));
+    let kept = m.get("duration_s").and_then(Value::as_f64).unwrap_or(0.0);
+    m.insert("ended".into(), json!(ended));
+    m.insert("end_reason".into(), json!("interrupted"));
+    m.insert("duration_s".into(), json!(crate::value::round_to(kept.max(span), 1)));
+    let _ = std::fs::write(Path::new(folder).join("summary.json"), dumps(&v, Json::Indent(1)));
+    let _ = std::fs::write(Path::new(folder).join("summary.md"), crate::journal::render_summary(&v));
     Some(dumps(&v, Json::Spaced))
 }
 
@@ -115,22 +126,34 @@ impl Store {
         con.execute_batch("PRAGMA synchronous=NORMAL")?;
         con.execute_batch(SCHEMA)?;
         let s = Store { root, con: Mutex::new(con), queue: Mutex::new(vec![]) };
-        s.close_interrupted()?;
+        // vehicle.md counts sessions and kilometres, so every car that had a session cut short gets it written again now:
+        // without this it kept the totals from before the cut until the car's next session ended.
+        for vin in s.close_interrupted()? {
+            let _ = crate::history::write_vehicle(&s, &vin);
+        }
         Ok(s)
     }
 
-    fn close_interrupted(&self) -> rusqlite::Result<()> {
+    /// Closes the sessions with no end record and returns the VINs they belong to (each once, in order). The session's own
+    /// summary.json and summary.md are settled too (`settled_summary`).
+    fn close_interrupted(&self) -> rusqlite::Result<Vec<String>> {
         let con = self.con.lock().unwrap();
-        let rows: Vec<(i64, f64, Option<String>, Option<f64>)> = {
-            let mut st = con.prepare("SELECT id, started, dir, (SELECT MAX(t) FROM samples WHERE session=s.id) FROM sessions s WHERE ended IS NULL")?;
-            let r = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<Result<_, _>>()?;
+        type Cut = (i64, String, f64, Option<String>, Option<f64>);
+        let rows: Vec<Cut> = {
+            let mut st = con.prepare("SELECT id, vin, started, dir, (SELECT MAX(t) FROM samples WHERE session=s.id) FROM sessions s WHERE ended IS NULL")?;
+            let r = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?.collect::<Result<_, _>>()?;
             r
         };
-        for (sid, started, folder, last) in rows {
-            let summary = folder.as_deref().and_then(saved_summary);
-            con.execute("UPDATE sessions SET ended=?, end_reason='interrupted', summary=? WHERE id=?", params![last.unwrap_or(started), summary, sid])?;
+        let mut vins: Vec<String> = vec![];
+        for (sid, vin, started, folder, last) in rows {
+            let ended = last.unwrap_or(started);
+            let summary = folder.as_deref().and_then(|f| settled_summary(f, ended));
+            con.execute("UPDATE sessions SET ended=?, end_reason='interrupted', summary=? WHERE id=?", params![ended, summary, sid])?;
+            if !vins.contains(&vin) {
+                vins.push(vin);
+            }
         }
-        Ok(())
+        Ok(vins)
     }
 
     // -- writes (queued) ----------------------------------------------------------

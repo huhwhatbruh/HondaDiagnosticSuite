@@ -23,6 +23,12 @@ pub fn watch(system_type: &str) -> &'static [(i64, f64)] {
         "PGM-FI" => &[(0x2610, 0.5), (0x2612, 0.5), (0x2660, 1.0), (0x2664, 0.5), (0x2611, 2.0), (0x2662, 2.0), (0x2694, 2.0), (0x2613, 30.0), (0x2663, 10.0), (0x266C, 30.0)],
         "DIESEL" => &[(0x2610, 0.5), (0x2612, 0.5)],
         "CVT" => &[(0x2301, 1.0), (0x2322, 0.5)], // shaft speeds, CVTF temperature; ratio, pressure, wheel speeds
+        // CANEAT (the transmission) 0x2201 and 0x2220, and the ACM (active engine mount) 0x3014: once a second each.
+        // They used to be only in the 10-minute snapshot, 11 reads in a 100-minute drive. Measured answer times on a car that has
+        // them: EAT ~4 ms, ACM ~3 ms (PCM ~6 ms), so the three groups cost about 1 % of the bus. The slow answerers (FCM 130-250 ms,
+        // SRS ~55 ms) stay out of this list on purpose: one read of them would hold the bus for the time of 20-40 PCM reads.
+        "EAT" => &[(0x2201, 1.0), (0x2220, 1.0)],
+        "ACM" => &[(0x3014, 1.0)],
         "HONDA ABS" => &[(0x4004, 0.5), (0x4005, 0.5), (0x4008, 300.0)],
         "METER" => &[(0x7022, 30.0), (0x7029, 30.0), (0x702A, 10.0), (0x702B, 5.0)],
         "TPMS" => &[(0x6001, 30.0)],
@@ -57,7 +63,8 @@ pub struct Monitor {
     live: Arc<LiveData>,
     pub ecus: Vec<EcuInfo>,
     last: HashMap<(u32, i64), f64>,           // (address, did) -> time read
-    pub unsupported: HashSet<(u32, i64)>,     // the car answered NRC 0x31 (no such group): not asked again
+    tried: HashSet<(u32, i64)>,               // (address, did) asked at least once since the scan, answered or not
+    pub unsupported: HashSet<(u32, i64)>,     // the car answered NRC 0x31 (no such group): not asked again this session
     addresses: Vec<u32>,
     dtc_due: HashMap<(u32, String), f64>,
     pub snap_queue: Vec<(EcuInfo, i64)>,
@@ -74,7 +81,7 @@ pub struct Monitor {
 impl Monitor {
     pub fn new(live: Arc<LiveData>) -> Monitor {
         let mut m = Monitor {
-            live, ecus: vec![], last: HashMap::new(), unsupported: HashSet::new(), addresses: vec![], dtc_due: HashMap::new(),
+            live, ecus: vec![], last: HashMap::new(), tried: HashSet::new(), unsupported: HashSet::new(), addresses: vec![], dtc_due: HashMap::new(),
             snap_queue: vec![], snap_due: 0.0, fails: 0, failed_at: None, asleep: false, wake_due: 0.0, dtc_every: DTC_EVERY, wake_every: WAKE_EVERY,
         };
         m.reset(&[], 0.0);
@@ -84,6 +91,7 @@ impl Monitor {
     pub fn reset(&mut self, ecus: &[EcuInfo], now: f64) {
         self.ecus = ecus.iter().filter(|e| !e.system.is_empty()).cloned().collect();
         self.last.clear();
+        self.tried.clear();
         self.unsupported.clear();
         let mut a: Vec<u32> = self.ecus.iter().map(|e| e.address).collect();
         a.sort();
@@ -100,6 +108,9 @@ impl Monitor {
 
     /// Every read, by anyone: refreshes the schedule and tracks whether the car still answers.
     pub fn seen(&mut self, address: i64, did: i64, t: f64, ok: bool) {
+        if address >= 0 {
+            self.tried.insert((address as u32, did));
+        }
         if ok {
             self.last.insert((address as u32, did), t);
             self.fails = 0;
@@ -109,6 +120,14 @@ impl Monitor {
             }
             self.fails += 1;
         }
+    }
+
+    /// Is a watch group still waiting for its first read (answered or not) since the scan? The identity reads of the modules
+    /// wait for these (service.rs): at engine start the first PCM groups hold the cranking dip of the battery, and the identity
+    /// reads of the slow modules (FCM 130-250 ms and SRS ~55 ms per read, 14 reads each) took 0.8-3.5 s before them. An
+    /// attempt counts, so a group that never answers does not hold the identity back for ever.
+    pub fn first_round_pending(&self) -> bool {
+        self.watch_items().iter().any(|(e, did, _)| !self.tried.contains(&(e.address, *did)))
     }
 
     pub fn car_gone(&self) -> bool {
@@ -152,7 +171,7 @@ impl Monitor {
             for e in &self.ecus {
                 for u in SNAPSHOT_USAGES {
                     for d in self.live.dids(&e.system, u) {
-                        if self.live.signals(&e.system, d).is_empty() {
+                        if self.live.signals(&e.system, d).is_empty() || self.unsupported.contains(&(e.address, d)) {
                             continue;
                         }
                         let k = (e.address, e.system.clone(), d);

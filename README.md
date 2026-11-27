@@ -7,7 +7,7 @@ HDS is the software Honda dealers use. It only runs on Windows. This does the re
 > **Confirmed on a 2015 Accord (K24W1, CVT); a 2019 and a 2021 Civic have been scanned over an ELM327 with partial results** (see [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles)). I still need more Hondas:
 > **[open a vehicle report](../../issues/new?template=vehicle_report.md)**
 
-[Download v0.8.1](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.8.1) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
+[Download v0.8.2](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.8.2) · [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started) · [Supported vehicles](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Supported-Vehicles) · [Adapters](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Adapters) · [FAQ](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/FAQ)
 
 
 A generic OBD-II reader talks to the emissions computer and knows a few standard codes. A modern Honda carries a dozen or more
@@ -21,7 +21,7 @@ diagnostic language. This software speaks it.
 - **36,000 of Honda's own trouble codes** with Honda's descriptions and repair-help text, not just the standard P-codes.
   Stored, pending and history codes, freeze frame, emissions readiness.
 - **Live data a generic reader never shows.** Misfires counted per cylinder, knock retard in degrees, the valve-timing angle,
-  fuel-learning trims, the CVT's shift state: 25,882 signal definitions, each converted with Honda's own formula. Gauges, plus an
+  fuel-learning trims, the CVT's shift state: 25,833 signal definitions, each converted with Honda's own formula. Gauges, plus an
   engine-map view built from what the car reports as you drive.
 - **Every drive recorded.** Codes that came and went, fuel economy, misfires, knock, and a health report against a saved baseline.
 - **Native Linux.** The GODIAG GD101 in J2534 mode runs through a small C driver written for this
@@ -57,10 +57,10 @@ The desktop app `hondascan-gui` wraps the same scanner.
 
 ## Install and build
 
-Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.8.1) has four archives:
-`hondascan-0.8.1-linux-x86_64.tar.gz`, `hondascan-0.8.1-windows-x86_64.zip` (with the desktop app),
-`hondascan-0.8.1-windows-i686.zip` (command line only, for 32-bit J2534 DLLs) and
-`hondascan-0.8.1-macos.tar.gz` (macOS on Apple silicon, `Hondascan.app`; new and not yet started on a Mac, see the wiki's Getting started). There is nothing to install for the program
+Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.8.2) has four archives:
+`hondascan-0.8.2-linux-x86_64.tar.gz`, `hondascan-0.8.2-windows-x86_64.zip` (with the desktop app),
+`hondascan-0.8.2-windows-i686.zip` (command line only, for 32-bit J2534 DLLs) and
+`hondascan-0.8.2-macos.tar.gz` (macOS on Apple silicon, `Hondascan.app`; new and not yet started on a Mac, see the wiki's Getting started). There is nothing to install for the program
 itself: no Python, no Rust, no Wine. Which Linux, Windows and macOS versions run it, the udev rule, the C compiler the GD101's J2534 mode
 needs and the serial and CAN set-up are on [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started).
 

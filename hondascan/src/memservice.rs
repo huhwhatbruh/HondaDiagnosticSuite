@@ -86,8 +86,8 @@ impl Service {
             if self.gate.as_ref().map(|g| (&g.0, g.1)) != Some((&gate, self.scan_generation)) {
                 let systems: Vec<String> = self.ecus.iter().filter(|e| e.address == gate.0).map(|e| e.system.clone()).collect();
                 let system = profile_system(profile_name, &systems).map_err(|e| ServiceError::value(e.0))?;
-                let db = self.db.clone();
-                let info = read_ecu_info(&db, system, self.hc()?.client(gate.0))?;
+                let live = self.live.clone();
+                let info = read_ecu_info(&live, system, self.hc()?.client(gate.0))?;
                 check_ecu(profile_name, info["ecu_model"].as_str(), false).map_err(|e| ServiceError::value(e.0))?;
                 self.gate = Some((gate, self.scan_generation)); // only a pass is remembered: a refusal returned above
             }

@@ -97,10 +97,16 @@ pub struct Condition {
     t_prev: Option<f64>,
     counters: BTreeMap<String, f64>,
     misfires: BTreeMap<u32, u64>, // idle misfires by cylinder
+    span: BTreeMap<&'static str, (f64, f64)>, // cam signal -> (lowest, highest) over the whole session
 }
 
 const WATCHED: [&str; 12] = ["NE", "ECT", "VSP", "FC", "KLAF", "KLAFAVE", "KNRTD", "VTCCMD", "VTCANGL", "BARO", "EXVTCCMDEA", "EXVTCABSAEA"];
 const MISFIRE: [&str; 3] = ["NMCYLOBS", "NMFACYL", "NMFBCYL"];
+// (features, command, actual angle). A cam deviation is only a measurement when the PCM reports the cam: the 2014 Odyssey
+// answers all four signals as raw 0 (-20.0 deg) on every read, idling or at 6,000 rpm, so their difference is 0 by
+// construction. When neither the command nor the angle moved at all during the session, the feature is left out
+// ("insufficient"), not judged normal.
+const CAM: [(&[&str], &str, &str); 2] = [(&["idle.vtc_dev", "cruise.vtc_dev"], "VTCCMD", "VTCANGL"), (&["cruise.exvtc_dev"], "EXVTCCMDEA", "EXVTCABSAEA")];
 
 impl Default for Condition {
     fn default() -> Self {
@@ -120,6 +126,7 @@ impl Condition {
             t_prev: None,
             counters: BTreeMap::new(),
             misfires: BTreeMap::new(),
+            span: BTreeMap::new(),
         }
     }
 
@@ -156,6 +163,10 @@ impl Condition {
                 }
             } else if let Some(v) = num(sym) {
                 self.last.insert(sym, (t, v));
+                if CAM.iter().any(|(_, c, a)| *c == sym || *a == sym) {
+                    let s = self.span.entry(sym).or_insert((v, v));
+                    *s = (s.0.min(v), s.1.max(v));
+                }
             }
         }
         if let Some(v) = num("VSP") {
@@ -217,7 +228,9 @@ impl Condition {
     /// when the summary is written (kept so `inference` can tie them to this drive's data).
     pub fn out(&self, dtc_free: bool, codes: &[Value]) -> Value {
         let mut features = Map::new();
-        for (name, run) in &self.runs {
+        let frozen = |s: &str| self.span.get(s).is_none_or(|(lo, hi)| lo == hi);
+        let absent: Vec<&str> = CAM.iter().filter(|(_, c, a)| frozen(c) && frozen(a)).flat_map(|(f, _, _)| f.iter().copied()).collect();
+        for (name, run) in self.runs.iter().filter(|(n, _)| !absent.contains(n)) {
             features.insert((*name).into(), json!({"v": jnum(round_to(run.mean, 4)), "n": run.n}));
         }
         if self.idle_ne.n > 0 {

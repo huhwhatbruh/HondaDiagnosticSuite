@@ -177,6 +177,10 @@ impl LiveData {
         LiveData { db, conv: Mutex::new(HashMap::new()), signals: Mutex::new(HashMap::new()), dids: Mutex::new(HashMap::new()), warmed: Mutex::new(HashSet::new()) }
     }
 
+    pub fn database(&self) -> &Database {
+        &self.db
+    }
+
     pub fn converter(&self, cid: i64) -> Option<Arc<Converter>> {
         if let Some(c) = self.conv.lock().unwrap().get(&cid) {
             return c.clone();

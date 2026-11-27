@@ -3,6 +3,30 @@
 All notable changes to the release. Format after [Keep a Changelog](https://keepachangelog.com/); versions follow
 [Semantic Versioning](https://semver.org/) from 1.0.0 on. Each release's page has the archives and their checksums.
 
+## [0.8.2]
+
+### Fixed
+- **An adapter plugged in after the app started now shows in the adapter list** (issue 15, reported by
+  [@Oddiesea](https://github.com/Oddiesea)). The list looks at the serial ports again each time it is opened; before, it only knew the ones
+  present at start-up. This was the same for every serial adapter on every system, not something the M-VCI or macOS did.
+- **`dtc` and `health` list each code once.** Where two systems share one controller (EVPS and PGM-FI at 0x10), the command line printed the
+  same list twice. Self-tests that have not finished this drive (status 0x40) are now shown apart from trouble codes, as the app already did.
+- **Unfinished self-tests no longer block a write.** Only confirmed, pending and failed-since-clear codes still refuse it.
+- **The data list no longer shows freeze-frame copies of live signals** (a throttle sensor reading 324 V, a pedal at 1,353 %): HDS leaves
+  those 36 signals out of its data list, and so does hondascan now.
+- The freeze frame names the code it was stored for (`P16BB-00`), not a number.
+- Cam timing is not called normal when the command and angle never moved in the whole session; it reads "insufficient".
+- An interrupted session (crash, power loss) now updates `vehicle.md` and its own summary when it is closed.
+- The first reply after a module wakes up (coolant -40, fuel level 0) is not counted in minimums, trends or alerts; the cranking voltage is.
+
+### Changed
+- Engine data is read before the modules are identified at the start of a session, so the cranking dip is recorded.
+- The transmission and the engine mount are read once a second while monitoring, not only in the 10-minute snapshot.
+- A data group the car refuses as out of range is asked once per session, not again at every snapshot.
+- The ACM shows its ECU ID and the SRS its maker; ten-byte ECU IDs are read in their numbered order.
+- Session notes give one line per knock and fuel-trim signal instead of one per engine-speed cell, and the misfire note no longer lists rpm
+  values it could not stand behind.
+
 ## [0.8.1]
 
 ### Changed

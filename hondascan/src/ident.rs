@@ -3,7 +3,9 @@
 //! except the VIN F190 on the engine computer; the ECU ID (0x2600) and the meter's part number (F110) answer.
 use crate::db::Database;
 use crate::honda::HondaCan;
+use crate::livedata::LiveData;
 use crate::uds::{UdsClient, UdsError};
+use rusqlite::params;
 use serde_json::{json, Map, Value};
 
 pub const IDENT_DIDS: [(u16, &str); 12] = [
@@ -71,7 +73,7 @@ pub fn read_vin(hc: &mut HondaCan, addresses: &[u32]) -> Result<Option<String>, 
 /// HDS's ECU ID: the system's ECUID1..n signals (one byte each) read from the car as hex, in order, or None.
 pub fn hex_id(db: &Database, system: &str, client: &mut UdsClient) -> Result<Option<String>, std::io::Error> {
     let rows: Vec<(i64, i64)> = db.query(
-        "SELECT did, offset FROM can_signal_parts WHERE system=? AND symbol LIKE 'ECUID%' ORDER BY symbol, part",
+        "SELECT did, offset FROM can_signal_parts WHERE system=? AND symbol LIKE '%ECUID%' ORDER BY length(symbol), symbol, part", // ECUID2 before ECUID10 (the fuel-cell systems have 10)
         [system],
         |r| Ok((r.get(0)?, r.get(1)?)),
     );
@@ -127,15 +129,32 @@ pub fn unit_part_number(db: &Database, system: &str, client: &mut UdsClient) -> 
     Ok((!s.is_empty() && s.chars().all(|c| !c.is_control())).then_some(s))
 }
 
+/// The symbol the database gives the maker byte of a module (SRS DID 8000); its converter ECUM_for_11SRS has the maker names as states.
+const MAKER_SYMBOL: &str = "13ECUM";
+
+/// The maker's name: the text of the MAKER_SYMBOL signal's state, read from the DID the database puts it on, or None.
+pub fn ecu_maker(live: &LiveData, system: &str, client: &mut UdsClient) -> Result<Option<String>, std::io::Error> {
+    let Some(did) = live.database().query_one("SELECT did FROM can_signal_parts WHERE system=? AND symbol=? LIMIT 1", params![system, MAKER_SYMBOL], |r| r.get::<_, i64>(0)) else { return Ok(None) };
+    let data = match client.read_did(did as u16) {
+        Ok(d) => d,
+        Err(UdsError::Io(e)) => return Err(e),
+        Err(_) => return Ok(None),
+    };
+    Ok(live.signals(system, did).iter().find(|s| s.symbol == MAKER_SYMBOL).and_then(|s| s.decode(&data).text))
+}
+
 /// What the module says about itself, in the ways HDS reads it (the standard F18x identification DIDs are refused by this
-/// car's modules): the ECU ID and the HDS ECU entry it matches, and a unit part number.
-pub fn read_ecu_info(db: &Database, system: &str, client: &mut UdsClient) -> Result<Value, std::io::Error> {
+/// car's modules): the ECU ID and the HDS ECU entry it matches, a unit part number, and the maker when the database names it.
+pub fn read_ecu_info(live: &LiveData, system: &str, client: &mut UdsClient) -> Result<Value, std::io::Error> {
+    let db = live.database();
     let ecu_id = hex_id(db, system, client)?;
     let part = unit_part_number(db, system, client)?;
+    let maker = ecu_maker(live, system, client)?;
     Ok(json!({
         "ecu_id": ecu_id,
         "ecu_model": ecu_id.as_deref().and_then(|i| match_ecu(db, system, i)),
         "part_number": part.as_deref().map(honda_part_number),
         "part_number_raw": part,
+        "ecu_maker": maker,
     }))
 }

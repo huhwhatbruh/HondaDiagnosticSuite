@@ -11,6 +11,9 @@ use std::sync::Arc;
 /// What `19 xx` gives back: (availability mask, [(record, its database match)]).
 pub type DtcReadout = (u8, Vec<(DtcRecord, Option<DtcInfo>)>);
 
+/// The system types that are the engine computer.
+pub const ENGINE: [&str; 2] = ["PGM-FI", "DIESEL"];
+
 pub const FUNCTIONAL_ID: u32 = 0x18DBEFF1;
 /// ISO 15765-4 functional id; the only one the GD101 session of 2026-10-11 got answers on.
 pub const OBD_FUNCTIONAL_ID: u32 = 0x18DB33F1;
@@ -424,6 +427,20 @@ impl HondaCan {
             out.push((r, hit));
         }
         Ok((avail, out))
+    }
+
+    /// `read_dtcs`, cut to the records that are this system's: what a front end shows under its name. Where several systems share
+    /// an address (the Accord's PCM: PGM-FI and CVT at 0x0E; a Jazz's: EVPS and PGM-FI at 0x10) the controller sends one list. Each
+    /// code belongs to the first of them whose DTC table has it, the engine asked first (CANFI and CANEVPS have six codes in
+    /// common), else to the engine. `found` is every system the scan found, in its order: (address, system type, database system).
+    pub fn read_own_dtcs<'a>(&mut self, ecu: &Ecu, mask: u8, found: impl IntoIterator<Item = (u32, &'a str, &'a str)>) -> Result<DtcReadout, UdsError> {
+        let (avail, mut recs) = self.read_dtcs(ecu, mask)?;
+        let mut sharing: Vec<(&str, &str)> = found.into_iter().filter(|(a, _, s)| *a == ecu.address && !s.is_empty()).map(|(_, t, s)| (t, s)).collect();
+        sharing.sort_by_key(|(t, _)| !ENGINE.contains(t));
+        if sharing.len() > 1 {
+            recs.retain(|(r, _)| sharing.iter().find(|(_, s)| self.db.has_dtc(s, &r.code)).unwrap_or(&sharing[0]).1 == ecu.system);
+        }
+        Ok((avail, recs))
     }
 
     pub fn clear_dtcs(&mut self, ecu: &Ecu) -> Result<Vec<u8>, UdsError> {

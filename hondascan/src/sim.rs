@@ -794,9 +794,11 @@ pub fn profile(name: &str) -> Result<Vec<SimNode>, String> {
             let e = SimEcu::new(0x30, "CANEPS", &[(0x4800, &[1])], &[[0x02, 0x03, 0x00, 0x20]]);
             scripted(vec![e])
         }
-        // two systems behind one address: engine and EV power supply
+        // two systems behind one address: engine and electric vacuum pump (brake booster). The controller has one code list: P0420
+        // (CANFI's table), P15BC (CANEVPS's alone), and two self-tests not yet run, P2610 (CANFI) and P15C5 (in both tables)
         "evps" => {
-            let mut e = SimEcu::new(0x10, "CANFI", &[(0x2600, &[1]), (0x3000, &[1]), (0xF190, b"1HGCR2F3XFA000000")], &[[0x04, 0x20, 0x00, 0x2F]]);
+            let codes = [[0x04, 0x20, 0x00, 0x2F], [0x15, 0xBC, 0x00, 0x08], [0x26, 0x10, 0x00, 0x40], [0x15, 0xC5, 0x04, 0x40]];
+            let mut e = SimEcu::new(0x10, "CANFI", &[(0x2600, &[1]), (0x3000, &[1]), (0xF190, b"1HGCR2F3XFA000000")], &codes);
             e.also = vec!["CANEVPS".into()];
             scripted(vec![e, SimEcu::new(0x28, "CANABS", &[(0x4000, &[1])], &[])])
         }

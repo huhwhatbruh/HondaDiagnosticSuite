@@ -67,6 +67,11 @@ pub mod qobject {
         #[qinvokable]
         fn start(self: Pin<&mut Self>);
 
+        /// Look at the serial ports again and publish `adapters`.
+        #[qinvokable]
+        #[cxx_name = "refreshAdapters"]
+        fn refresh_adapters(self: Pin<&mut Self>);
+
         #[qinvokable]
         #[cxx_name = "connectAdapter"]
         fn connect_adapter(self: Pin<&mut Self>, spec: &QString);
@@ -481,6 +486,12 @@ impl qobject::AppModel {
             if qt.queue(|m| m.tick()).is_err() { break; }
         });
         self.rpc("hello", json!({}), |m, r| m.on_hello(r));
+        self.as_mut().refresh_adapters();
+    }
+
+    /// Look at the serial ports again (TopBar.qml asks whenever the adapter list is opened; `start` does once): an adapter
+    /// plugged in after the app started is listed. An unchanged list is not announced (the setter compares).
+    pub fn refresh_adapters(self: Pin<&mut Self>) {
         self.rpc("ports", json!({}), |m, r| m.on_ports(r));
     }
 

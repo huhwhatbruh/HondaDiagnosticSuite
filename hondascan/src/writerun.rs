@@ -108,9 +108,13 @@ impl WriteRun {
 
         // HDS's evtclearn_8_13.$CODE: CM.ChkDtc() then PGM_FI_UTILS.ShiftCheck(); CVT_ISL sub_abf4:
         // CM.DisplayAllDtcs() == 0. The meter's sub_65f9 checks neither. hondascan reads every status group
-        // (19 02 FF), at least as strict as HDS, where HDS checks DTCs.
+        // (19 02 FF) and counts every record that is a fault: confirmed, pending, and failed since the last clear
+        // (kind() "stored"), so at least as strict as HDS's two lists. A record with only the test-not-completed bits
+        // (kind() "incomplete") is a self-test that has not run yet; Honda PCMs send dozens of them after every key
+        // cycle (2014 Odyssey, 2018 Jazz), so counting them refused writes on cars with no trouble code.
         if self.write.check_dtcs {
-            let (_, dtcs) = hc.client(self.address).read_dtcs(0xFF)?;
+            let (_, mut dtcs) = hc.client(self.address).read_dtcs(0xFF)?;
+            dtcs.retain(|d| d.kind() != "incomplete");
             if !dtcs.is_empty() {
                 let codes: Vec<String> = dtcs.iter().map(|d| d.code.clone()).collect();
                 return Err(RunError::Condition(ConditionFailed(vec![format!("no DTCs stored (HDS CM.ChkDtc/DisplayAllDtcs): found {}", codes.join(", "))])));

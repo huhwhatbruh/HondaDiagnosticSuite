@@ -17,7 +17,7 @@ use crate::store::Store;
 use crate::transport::can::{now, CaptureLog};
 use crate::transport::{open_adapter, Adapter};
 use crate::trip::fuel_flow_lph;
-use crate::uds::UdsError;
+use crate::uds::{UdsError, READ_DID};
 use crate::value::{round_to, Val};
 use serde_json::{json, Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -36,7 +36,7 @@ const SHARE_FIRST: f64 = 60.0;
 const SHARE_EVERY: f64 = 600.0;
 
 pub const NO_UNIT: [&str; 3] = ["", "<no units>", "-1"];
-pub const ENGINE: [&str; 2] = ["PGM-FI", "DIESEL"];
+pub use crate::honda::ENGINE;
 /// data-list usage -> recorded kind
 pub const SNAPSHOT_KINDS: [(&str, &str); 2] = [("FreezeData", "freeze"), ("OBD Status", "status")];
 
@@ -48,6 +48,12 @@ pub fn unit_of(sig: &Signal) -> String {
 pub fn value_of(r: &Reading) -> Val {
     if !r.error.is_empty() {
         Val::Null
+    } else if let (true, None, Some(v)) = (r.symbol == "FRZDTC", &r.text, r.value) {
+        // A freeze frame's FRZDTC (three whole bytes in all 21 systems that have it) is the code the frame was stored for, in a
+        // 19 02 record's layout: a 2014 Odyssey's `16 BB 00` is P16BB-00, one of its confirmed codes. HDS's database gives it no
+        // converter (RAWDATA for EVBAT), so as a number it read 1,489,664. The decoder stays as it is (golden_db pins it).
+        let b = (v as u32).to_be_bytes();
+        Val::Text(if v == 0.0 { "none".into() } else { format!("{}-{:02X}", crate::uds::sae_code(b[1], b[2]), b[3]) })
     } else if let Some(t) = &r.text {
         Val::Text(t.clone())
     } else {
@@ -128,7 +134,7 @@ pub struct Service {
     pub monitor: Monitor,
     /// Overrides the maps' (warm-engine temperature, samples per cell); tests set it with `set_map_limits`.
     map_limits: Option<(f64, f64)>,
-    /// Tests only: the time stamped on each read, so a scripted drive can run faster than real time (`set_clock`).
+    /// Tests only: the time stamped on each read and the monitor's schedule, so a scripted drive can run faster than real time (`set_clock`).
     clock: Option<Arc<dyn Fn() -> f64 + Send + Sync>>,
     store: Option<Arc<Store>>,
     pub adapter: Option<Arc<dyn Adapter>>,
@@ -177,9 +183,14 @@ impl Service {
         self.map_limits = limits;
     }
 
-    /// Tests only: stamp reads with this clock instead of the wall clock.
+    /// Tests only: stamp reads, and run the monitor's schedule, on this clock instead of the wall and monotonic clocks.
     pub fn set_clock(&mut self, clock: Arc<dyn Fn() -> f64 + Send + Sync>) {
         self.clock = Some(clock);
+    }
+
+    /// The time the monitor schedules by: the test clock when one is set, else the monotonic clock.
+    fn sched_now(&self) -> f64 {
+        self.clock.as_ref().map_or_else(mono, |c| c())
     }
 
     pub fn store(&mut self) -> Result<Arc<Store>, ServiceError> {
@@ -340,7 +351,7 @@ impl Service {
         }
         let (sid, folder) = (rec.sid, rec.journal.folder.to_string_lossy().into_owned());
         self.rec = Some(rec);
-        self.monitor.reset(&ecus, mono());
+        self.monitor.reset(&ecus, self.sched_now());
         self.ident_queue = ecus.iter().map(|e| e.address).collect::<BTreeSet<_>>().into_iter().collect();
         let missing = self.rec.as_ref().map(Recorder::missing_core).unwrap_or_default();
         Ok(json!({"ecus": ecus.iter().map(EcuInfo::to_json).collect::<Vec<_>>(), "seconds": seconds, "vin": vin, "session": sid, "folder": folder,
@@ -375,7 +386,8 @@ impl Service {
     /// The outcome of every exchange (ok: the ECU answered, even if with a refusal): proof of life for the car-off check, and
     /// for the recorder, which does not count the reads that found the car gone.
     pub fn seen(&mut self, address: i64, did: i64, ok: bool) {
-        self.monitor.seen(address, did, mono(), ok);
+        let t = self.sched_now();
+        self.monitor.seen(address, did, t, ok);
         if ok {
             if let Some(r) = self.rec.as_mut() {
                 r.answered(address as u32);
@@ -393,6 +405,12 @@ impl Service {
         };
         let mut out = vec![];
         for did in list {
+            if self.monitor.unsupported.contains(&(ecu.address, did)) {
+                // refused with NRC 0x31 earlier this session: the car's answer is known, so no request goes out
+                let refused = UdsError::Negative { sid: READ_DID, nrc: 0x31 };
+                out.push(json!({"did": did, "error": refused.to_string(), "nrc": 0x31}));
+                continue;
+            }
             let sigs = self.live.signals(&system, did);
             let t0 = Instant::now();
             let data = self.hc.as_mut().unwrap().client(ecu.address).read_did(did as u16);
@@ -439,7 +457,8 @@ impl Service {
     pub fn dtcs(&mut self, address: i64, system: &str) -> Result<Value, ServiceError> {
         let ecu = self.ecu_of(address, system);
         let honda = HondaEcu { address: ecu.address, system_type: ecu.system_type.clone(), system: ecu.system.clone(), rule: String::new(), probes: HashMap::new() };
-        let (avail, recs) = match self.hc()?.read_dtcs(&honda, 0xFF) {
+        let found = self.ecus.clone();
+        let (avail, recs) = match self.hc()?.read_own_dtcs(&honda, 0xFF, found.iter().map(|e| (e.address, e.system_type.as_str(), e.system.as_str()))) {
             Ok(r) => r,
             Err(e @ (UdsError::NoResponse(_) | UdsError::Transport(_))) => {
                 self.seen(ecu.address as i64, -1, false);
@@ -448,9 +467,8 @@ impl Service {
             Err(e) => return Err(e.into()),
         };
         self.seen(ecu.address as i64, -1, true);
-        let mine = self.owned(&ecu);
         let mut dtcs: Vec<Value> = vec![];
-        for (r, info) in recs.iter().filter(|(r, _)| mine(&r.code)) {
+        for (r, info) in &recs {
             dtcs.push(json!({
                 "code": r.code, "failure_type": r.failure_type, "status": r.status, "kind": r.kind(), "flags": r.flags(),
                 "honda_code": info.as_ref().filter(|i| !i.honda_code.is_empty() && i.honda_code != "0-0").map_or(String::new(), |i| i.honda_code.clone()),
@@ -470,19 +488,6 @@ impl Service {
             }
         }
         Ok(json!({"available": avail, "dtcs": dtcs, "incomplete": incomplete}))
-    }
-
-    /// Where several systems share an address (the Accord's PCM: PGM-FI and CVT at 0x0E) the ECU sends one list; each code
-    /// belongs to the first of them whose DTC table has it (each code is in one table), else the engine.
-    fn owned(&self, ecu: &EcuInfo) -> Box<dyn Fn(&str) -> bool> {
-        let mut sorted: Vec<&EcuInfo> = self.ecus.iter().collect();
-        sorted.sort_by_key(|e| !ENGINE.contains(&e.system_type.as_str()));
-        let systems: Vec<String> = sorted.iter().filter(|e| e.address == ecu.address && !e.system.is_empty()).map(|e| e.system.clone()).collect();
-        if systems.len() < 2 {
-            return Box::new(|_| true);
-        }
-        let (db, mine) = (self.db.clone(), ecu.system.clone());
-        Box::new(move |code| systems.iter().find(|s| db.has_dtc(s, code)).unwrap_or(&systems[0]) == &mine)
     }
 
     /// `sim_only`: refuse (kind `Held`) unless the connected adapter is a simulated car; the phone gateway asks for it while
@@ -518,8 +523,8 @@ impl Service {
 
     pub fn ecu_info(&mut self, address: i64, system: &str) -> Result<Value, ServiceError> {
         let ecu = self.ecu_of(address, system);
-        let db = self.db.clone();
-        Ok(read_ecu_info(&db, &ecu.system, self.hc()?.client(ecu.address))?)
+        let live = self.live.clone();
+        Ok(read_ecu_info(&live, &ecu.system, self.hc()?.client(ecu.address))?)
     }
 
     /// The system's data list (`dids`), plus the groups HDS reads for a freeze frame and for emissions readiness.
@@ -599,19 +604,21 @@ impl Service {
         if self.hc.is_none() || (self.rec.is_none() && !self.monitor.asleep) {
             return Ok(None);
         }
-        let now_m = mono();
-        if !self.ident_queue.is_empty() && !self.monitor.asleep {
+        let now_m = self.sched_now();
+        // Identity waits for the first round of watch reads (monitor.rs, first_round_pending): the first engine groups of a
+        // session hold the cranking dip of the battery, and they used to wait behind 14 reads of every module.
+        if !self.ident_queue.is_empty() && !self.monitor.asleep && !self.monitor.first_round_pending() {
             let addr = self.ident_queue.remove(0);
             let standard = read_identity(self.hc.as_mut().unwrap().client(addr))?;
             // the F18x DIDs are refused on this car; the ECU ID and part number (HDS's own ways in) are what tells the
             // calibration of a module, so each system at this address records them next to whatever F18x answered
-            let db = self.db.clone();
+            let live = self.live.clone();
             let ecus: Vec<EcuInfo> = self.ecus.iter().filter(|e| e.address == addr).cloned().collect();
             let mut idents = vec![];
             for e in &ecus {
                 let mut ident = standard.clone();
                 if !e.system.is_empty() {
-                    if let (Some(m), Value::Object(info)) = (ident.as_object_mut(), read_ecu_info(&db, &e.system, self.hc.as_mut().unwrap().client(addr))?) {
+                    if let (Some(m), Value::Object(info)) = (ident.as_object_mut(), read_ecu_info(&live, &e.system, self.hc.as_mut().unwrap().client(addr))?) {
                         m.extend(info.into_iter().filter(|(_, v)| !v.is_null()));
                     }
                 }
@@ -646,10 +653,10 @@ impl Service {
             Err(e) => escaped = Some(e), // a bug or a bad state: it propagates, after the task has moved on
         }
         // even a failed task moves on, so one bad task cannot repeat forever
-        self.monitor.done(&task, mono());
+        self.monitor.done(&task, self.sched_now());
         if self.rec.is_some() && self.monitor.car_gone() {
             self.end("car off");
-            self.monitor.sleep(mono());
+            self.monitor.sleep(self.sched_now());
             (self.emit)("car", json!({"state": "off"}));
         }
         match escaped {

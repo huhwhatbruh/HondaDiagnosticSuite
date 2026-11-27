@@ -206,8 +206,17 @@ fn build(src: &Path, out: &Path) -> Res<()> {
         tx.execute("INSERT INTO can_packet_usage VALUES(?,?,?)", params![r.s("system"), r.s("usage"), r.hex("did")?])?;
     }
     // offset 255 and DID FFFF are HDS placeholders for values that are not in a live DID (snapshot data,
-    // OBD readiness); those are left out
+    // OBD readiness); those are left out.
+    // So are the freeze-frame signals (`tblSignal` freeze byte set) of a DID that has a data-list usage: HDS's parameter
+    // lists skip them (RuntimeDb.dll `GetCANParamIds`, 0x1000ebd0 / `GetParamIds` 0x1000e0ed test the byte at +0xf of the
+    // signal row and skip the signal when it is set); they only share pids with the data list's own signals.
+    let freeze: std::collections::HashSet<i64> = rows(src, "signals.csv")?.iter().filter(|r| r.s("freeze_data") == "1").map(|r| r.i("row")).collect::<Res<_>>()?;
+    let data_list: std::collections::HashSet<(String, i64)> =
+        rows(src, "can_packet_usage.csv")?.iter().filter(|r| r.s("usage") == "DataList").map(|r| Ok((r.s("system").to_string(), r.hex("did")?))).collect::<Res<_>>()?;
     for r in rows(src, "can_signal_parts.csv")? {
+        if freeze.contains(&r.i("signal_row")?) && data_list.contains(&(r.s("system").to_string(), r.hex("did")?)) {
+            continue;
+        }
         if r.s("did_in_packets") == "1" && r.s("offset") != "255" && r.s("did") != "FFFF" {
             signal_part(&tx, &r)?;
         }

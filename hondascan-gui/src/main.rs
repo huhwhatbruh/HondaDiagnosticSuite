@@ -32,6 +32,8 @@ mod systems;
 mod sysview;
 #[cfg(test)]
 mod text_audit;
+#[cfg(test)]
+mod topbar_test;
 mod vehicle;
 mod writes;
 

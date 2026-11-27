@@ -7,12 +7,14 @@
 use crate::alerts::Alerts;
 use crate::journal::{py, Journal};
 use crate::condition::Condition;
+use crate::mapbaseline::MIN_SESSIONS;
 use crate::maps::Maps;
 use crate::selftests::{Dtc, SelfTests};
 use crate::store::{EcuRow, StatRow, Store};
 use crate::transport::can::{now, CaptureLog};
 use crate::trip::{Stat, Trip};
 use crate::value::{round_to, Named, Val};
+use regex::Regex;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
@@ -25,6 +27,21 @@ pub const SUMMARY_EVERY: f64 = 60.0;
 const ENGINE: [&str; 2] = ["PGM-FI", "DIESEL"];
 const LIVE: [&str; 3] = ["poll", "watch", "snapshot"]; // reads of present values (snapshot = a data-list group)
 const WHOLE: [&str; 3] = ["snapshot", "freeze", "status"]; // stored in full: snapshots, freeze-frame and OBD-status groups
+
+/// What an ECU's data group holds in its first reply after the ECU starts answering, before its first sensor conversion:
+/// (symbol, value). Seen on a 2014 Odyssey's road-trip recording (two drives of about 105 minutes): the first read of the
+/// group after each wake-up had ECT -40 degC, IAT -40 degC, TCAT -40 degC, BARO 0 kPa and fuel level 0 %, and the next
+/// read of every one of them was a plausible value. Raw 0 of these converters is the value listed here.
+///
+/// The rule is the first read of the group since the ECU started answering AND this value, never the value alone: a real
+/// -40 degC on a cold day is a later read and counts (an unanswered read re-arms the rule, see `Recorder::failed`). Another
+/// first read of a group (VB during cranking, NE, VSP, ...) is a measurement and counts at once: the cranking dip of the
+/// battery (9.1, 10.0, 10.2, 11.2 V in the first reads of a session) is in the statistics.
+const WAKE_SENTINELS: [(&str, f64); 6] = [("ECT", -40.0), ("IAT", -40.0), ("TCAT", -40.0), ("BARO", 0.0), ("FLI", 0.0), ("FLEVELF", 0.0)];
+
+fn wake_sentinel(symbol: &str, v: &Val) -> bool {
+    v.num().is_some_and(|x| WAKE_SENTINELS.iter().any(|(s, sentinel)| *s == symbol && x == *sentinel))
+}
 
 /// One system found on the car, as the service lists it.
 #[derive(Debug, Clone, PartialEq)]
@@ -127,6 +144,7 @@ pub struct Recorder {
     t_flush: Instant,
     t_summary: Instant,
     identified: HashSet<(u32, String)>,
+    woken: HashSet<(String, i64)>,        // (system, did) read since that ECU last started answering
 }
 
 impl Recorder {
@@ -160,7 +178,7 @@ impl Recorder {
             trip: Trip::new(), maps, condition: Condition::new(), alerts: Alerts::new(), stats: vec![], last_sample: HashMap::new(),
             codes: vec![], selftests: SelfTests::default(), first_read: HashSet::new(), appeared: vec![], gone: vec![], cleared: vec![],
             reads_ok: 0, reads_failed: 0, rejected: vec![], unanswered: vec![], silence: BTreeMap::new(), latency: vec![],
-            t_flush: Instant::now(), t_summary: Instant::now(), identified: HashSet::new(),
+            t_flush: Instant::now(), t_summary: Instant::now(), identified: HashSet::new(), woken: HashSet::new(),
         };
         r.journal.event("session_start", json!({"vin": vin, "adapter": adapter, "scan_s": scan_s, "ecus": r.ecus.iter().map(EcuInfo::to_json).collect::<Vec<_>>()}));
         Ok(r)
@@ -174,6 +192,7 @@ impl Recorder {
         let system = ecu.name().to_string();
         self.reads_ok += 1;
         let mut named = Named::new();
+        let first = self.woken.insert((system.clone(), did)); // the first reply of this group since the ECU started answering
         for (i, (d, v)) in defs.iter().zip(values).enumerate() {
             let key = (system.clone(), did, i);
             let idx = match self.stats.iter().position(|(k, _)| *k == key) {
@@ -183,6 +202,9 @@ impl Recorder {
                     self.stats.len() - 1
                 }
             };
+            if first && wake_sentinel(&d.symbol, v) {
+                continue; // not a measurement yet (WAKE_SENTINELS): out of min/max/mean, the trends, the trip, the maps
+            }
             let st = &mut self.stats[idx].1;
             st.last = v.clone();
             if let Some(n) = v.num() {
@@ -227,6 +249,8 @@ impl Recorder {
                 self.rejected.push((key.clone(), err.into()));
             }
         } else {
+            // silent: when it answers again its first reply of every group is a wake-up reply once more (WAKE_SENTINELS)
+            self.woken.retain(|(s, _)| s != ecu.name());
             match self.unanswered.iter_mut().find(|(k, _)| *k == key) {
                 Some((_, n)) => *n += 1,
                 None => self.unanswered.push((key.clone(), 1)),
@@ -459,21 +483,18 @@ impl Recorder {
                 out.push(format!("charging voltage averaged {} V (Honda's charging control targets 12.5-14.5 V)", py(&bv["engine_running"]["mean"])));
             }
         }
-        if let Some(min) = bv["engine_off"]["min"].as_f64() {
-            if min < 12.2 {
-                out.push(format!("battery fell to {} V with the engine off (below 12.2 V suggests a low charge)", py(&bv["engine_off"]["min"])));
-            }
-        }
+        // No note on the engine-off voltage: key-on seconds with unknown loads say nothing about the charge (the 2014 Odyssey read
+        // 11.6 V for 15 s right after a drive, and a load test found its battery fine). The trip summary still shows the numbers.
         if let Some(max) = trip["coolant_c"]["max"].as_f64() {
             if max > 105.0 {
                 out.push(format!("coolant reached {} degC", py(&trip["coolant_c"]["max"])));
             }
         }
+        // The engine speed a misfire counter was read at is not the speed of the misfires (the counters are polled slowly), so no rpm here.
         for (cyl, n) in self.alerts.misfires() {
-            let rpm: Vec<String> = self.alerts.rise_rpms(cyl).iter().map(|r| format!("{r:.0}")).collect();
-            out.push(format!("misfires counted on cylinder {cyl}: {n:.0}{}", if rpm.is_empty() { String::new() } else { format!(" (at {} rpm)", rpm.join(", ")) }));
+            out.push(format!("misfires counted on cylinder {cyl}: {n:.0}"));
         }
-        out.extend(self.maps.notes());
+        out.extend(grouped_cell_notes(self.maps.notes()));
         if trip["gaps"].as_i64().unwrap_or(0) != 0 {
             out.push(format!("{} gaps longer than 5 s in the engine data (distance not bridged across them)", trip["gaps"]));
         }
@@ -546,4 +567,162 @@ pub fn dtc_records(dtcs: &[Value]) -> Vec<Dtc> {
             description: d.get("description").and_then(Value::as_str).unwrap_or("").into(),
         })
         .collect()
+}
+
+/// One per-cell note that `maps::notes()` gives, read back: its signal's label, the cell's words up to the baseline tag
+/// (`head`), the mean, the cell's range and what flagged it.
+struct CellNote {
+    head: String,
+    mean: f64,
+    rpm: (f64, Option<f64>), // lower and upper edge; None for the top bin ("above")
+    load: (f64, Option<f64>),
+    basis: Basis,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Basis {
+    Own,          // the car's own history decided the flag
+    Fixed(usize), // the fixed limit did, with this many earlier sessions of the car
+}
+
+/// The words `maps.rs` gives one flagged cell of fuel trim or knock retard (`Maps::text`, then the tag of `Maps::flag`).
+const CELL_NOTE: &str = r"^(?P<head>(?P<label>long-term fuel trim|knock retard|cylinder [1-4] knock retard) averaged (?P<mean>-?[0-9.]+)(?: deg)? at (?P<rpm>above [0-9]+|[0-9]+-[0-9]+) rpm, (?P<load>above [0-9.]+|[0-9.]+-[0-9.]+) g/rev \([0-9]+ samples\)(?P<corr>: the PCM is correcting by [0-9]+ %)?)(?P<tail>.*)$";
+
+fn edges(s: &str) -> Option<(f64, Option<f64>)> {
+    match s.strip_prefix("above ") {
+        Some(lo) => Some((lo.parse().ok()?, None)),
+        None => {
+            let (lo, hi) = s.split_once('-')?;
+            Some((lo.parse().ok()?, Some(hi.parse().ok()?)))
+        }
+    }
+}
+
+fn read_cell_note(cell: &Regex, fixed: &Regex, note: &str) -> Option<(String, CellNote)> {
+    let c = cell.captures(note)?;
+    let tail = &c["tail"];
+    let basis = if tail.contains("[own history]") { Basis::Own } else { Basis::Fixed(fixed.captures(tail)?[1].parse().ok()?) };
+    let cn = CellNote { head: c["head"].to_string(), mean: c["mean"].parse().ok()?, rpm: edges(&c["rpm"])?, load: edges(&c["load"])?, basis };
+    Some((c["label"].to_string(), cn))
+}
+
+/// The lowest lower edge to the highest upper edge, "lo+" when the top bin is among them.
+fn cover(spans: impl Iterator<Item = (f64, Option<f64>)>, dp: usize) -> String {
+    let (mut lo, mut hi, mut open) = (f64::MAX, f64::MIN, false);
+    for (l, h) in spans {
+        lo = lo.min(l);
+        match h {
+            Some(h) => hi = hi.max(h),
+            None => open = true,
+        }
+    }
+    if open {
+        format!("{lo:.dp$}+")
+    } else {
+        format!("{lo:.dp$}-{hi:.dp$}")
+    }
+}
+
+/// One line for one signal's flagged cells: how many, the speed and load they cover, the worst cell (the highest knock
+/// retard, or the furthest trim from 1.00) in its own words, and the baseline tag once.
+fn group_line(label: &str, cells: &[CellNote]) -> String {
+    let k = cells.len();
+    let own = cells.iter().filter(|c| c.basis == Basis::Own).count();
+    let used = cells.iter().find_map(|c| if let Basis::Fixed(u) = c.basis { Some(u) } else { None }).unwrap_or(0);
+    let tag = if own == k {
+        "[own history]".to_string()
+    } else if own == 0 {
+        format!("[fixed limit: {used} earlier sessions, {MIN_SESSIONS} needed for the car's own baseline]")
+    } else {
+        format!("[own history for {own} of {k} cells; fixed limit for the other {}: {used} earlier sessions, {MIN_SESSIONS} needed for the car's own baseline]", k - own)
+    };
+    let key = |c: &CellNote| if label == "long-term fuel trim" { (c.mean - 1.0).abs() } else { c.mean };
+    let worst = cells.iter().max_by(|a, b| key(a).total_cmp(&key(b))).expect("a group has a cell");
+    let rpm = cover(cells.iter().map(|c| c.rpm), 0);
+    let load = cover(cells.iter().map(|c| c.load), 1);
+    let word = if k == 1 { "cell" } else { "cells" };
+    format!("{label} flagged in {k} {word} across {rpm} rpm, {load} g/rev; worst: {} {tag}", worst.head)
+}
+
+/// `maps::notes()` gives one note per flagged cell of fuel trim and knock retard, and of each cylinder's knock. Here they
+/// become one line per signal (`group_line`). Nothing is judged again: the flags and numbers are the cells' own, and any
+/// other note passes through unchanged, after the grouped lines.
+pub fn grouped_cell_notes(notes: Vec<String>) -> Vec<String> {
+    let cell = Regex::new(CELL_NOTE).expect("CELL_NOTE is a valid pattern");
+    let fixed = Regex::new(r"\[fixed limit: ([0-9]+) earlier sessions").expect("a valid pattern");
+    let mut groups: Vec<(String, Vec<CellNote>)> = vec![];
+    let mut others = vec![];
+    for n in notes {
+        match read_cell_note(&cell, &fixed, &n) {
+            Some((label, c)) => match groups.iter_mut().find(|(l, _)| *l == label) {
+                Some((_, v)) => v.push(c),
+                None => groups.push((label, vec![c])),
+            },
+            None => others.push(n),
+        }
+    }
+    let mut out: Vec<String> = groups.iter().map(|(label, cells)| group_line(label, cells)).collect();
+    out.extend(others);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::grouped_cell_notes;
+
+    const OWN: &str = " +4.1 standard deviations from this car's 4 earlier sessions (1.20 +/- 0.30) [own history]";
+    const FIXED: &str = " [fixed limit: 4 earlier sessions, 3 needed for the car's own baseline]";
+
+    #[test]
+    fn own_history_cells_get_one_tag_for_the_whole_signal() {
+        let notes = vec![
+            format!("knock retard averaged 3.0 deg at 2000-2500 rpm, 0.6-0.8 g/rev (30 samples):{OWN}"),
+            format!("knock retard averaged 5.5 deg at 2500-3000 rpm, 0.8-1.0 g/rev (40 samples):{OWN}"),
+        ];
+        assert_eq!(
+            grouped_cell_notes(notes),
+            ["knock retard flagged in 2 cells across 2000-3000 rpm, 0.6-1.0 g/rev; worst: knock retard averaged 5.5 deg at 2500-3000 rpm, 0.8-1.0 g/rev (40 samples) [own history]"]
+        );
+    }
+
+    #[test]
+    fn a_mix_of_own_history_and_the_fixed_limit_is_said_once_with_counts() {
+        let notes = vec![
+            format!("knock retard averaged 3.0 deg at 2000-2500 rpm, 0.6-0.8 g/rev (30 samples):{OWN}"),
+            format!("knock retard averaged 6.0 deg at 1500-2000 rpm, 1.0-1.2 g/rev (25 samples){FIXED}"),
+        ];
+        assert_eq!(
+            grouped_cell_notes(notes),
+            ["knock retard flagged in 2 cells across 1500-2500 rpm, 0.6-1.2 g/rev; worst: knock retard averaged 6.0 deg at 1500-2000 rpm, 1.0-1.2 g/rev (25 samples) [own history for 1 of 2 cells; fixed limit for the other 1: 4 earlier sessions, 3 needed for the car's own baseline]"]
+        );
+    }
+
+    #[test]
+    fn the_worst_trim_is_the_furthest_from_one_and_keeps_its_correction_words() {
+        let notes = vec![
+            "long-term fuel trim averaged 0.85 at 2000-2500 rpm, 0.6-0.8 g/rev (25 samples): the PCM is correcting by 15 %".to_string() + FIXED,
+            "long-term fuel trim averaged 1.12 at 1000-1500 rpm, above 1.2 g/rev (50 samples): the PCM is correcting by 12 %".to_string() + FIXED,
+        ];
+        let out = grouped_cell_notes(notes);
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert!(out[0].starts_with("long-term fuel trim flagged in 2 cells across 1000-2500 rpm, 0.6+ g/rev; worst: long-term fuel trim averaged 0.85 at 2000-2500 rpm, 0.6-0.8 g/rev (25 samples): the PCM is correcting by 15 % [fixed limit"), "{out:?}");
+        assert_eq!(out[0].matches('[').count(), 1, "the tag is written once: {out:?}");
+    }
+
+    #[test]
+    fn one_cell_is_one_line_and_other_notes_keep_their_place() {
+        let notes = vec![
+            "spark advance averaged 24.0 deg at 1500-2000 rpm, 0.2-0.4 g/rev (30 samples) [own history]".to_string(),
+            format!("cylinder 4 knock retard averaged 4.0 deg at 3000-3500 rpm, 0.2-0.4 g/rev (20 samples){FIXED}"),
+            "cylinder 4 knock retard averaged 4.0 deg over the session: +3.5 standard deviations [own history]".to_string(),
+        ];
+        assert_eq!(
+            grouped_cell_notes(notes),
+            [
+                "cylinder 4 knock retard flagged in 1 cell across 3000-3500 rpm, 0.2-0.4 g/rev; worst: cylinder 4 knock retard averaged 4.0 deg at 3000-3500 rpm, 0.2-0.4 g/rev (20 samples) [fixed limit: 4 earlier sessions, 3 needed for the car's own baseline]",
+                "spark advance averaged 24.0 deg at 1500-2000 rpm, 0.2-0.4 g/rev (30 samples) [own history]",
+                "cylinder 4 knock retard averaged 4.0 deg over the session: +3.5 standard deviations [own history]",
+            ]
+        );
+    }
 }

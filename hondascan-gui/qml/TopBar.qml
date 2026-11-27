@@ -30,22 +30,22 @@ Rectangle {
     readonly property bool connected: AppModel.link === 2
     readonly property bool onKline: !!JSON.parse(AppModel.kline).mode
 
-    // select the adapter used last time, once the list and the settings are both here
+    // the adapter chosen or connected to since the app started ("custom": the typed one); it outlives a new list
+    property string picked: ""
+
+    // select that one, or else the one used last time, once the list and the settings are both here; one that is not in the list
+    // goes into the custom row, so no other adapter takes its place
     function pickSaved() {
-        const last = AppModel.lastAdapter
-        for (let i = 0; i < list.length; ++i) if (list[i].spec === last) { choice = i; return }
-        if (last !== "") { choice = list.length - 1; custom = last }
+        const want = picked || AppModel.lastAdapter
+        for (let i = 0; i < list.length; ++i) if (list[i].spec === want) { choice = i; return }
+        if (want !== "") { choice = list.length - 1; custom = want }
     }
     onListChanged: pickSaved()
     Connections {
         target: AppModel
         function onLastAdapterChanged() { root.pickSaved() }
         // connected by the backend (HONDASCAN_ADAPTER) or the welcome button: show the adapter that is actually in use
-        function onAdapterChanged() {
-            const i = root.list.findIndex(a => a.spec === AppModel.adapter)
-            if (i >= 0) root.choice = i
-            else { root.choice = root.list.length - 1; root.custom = AppModel.adapter }
-        }
+        function onAdapterChanged() { root.picked = AppModel.adapter; root.pickSaved() }
     }
 
     Row {
@@ -76,7 +76,9 @@ Rectangle {
             model: root.list
             textRole: "label"
             currentIndex: root.choice
-            onActivated: i => root.choice = i
+            // a new list puts a ComboBox back on its first row, and the binding alone does not run again while `choice` stays
+            onModelChanged: currentIndex = Qt.binding(() => root.choice)
+            onActivated:i => { root.choice = i; root.picked = root.list[i].spec }
             hoverEnabled: true
             background: ControlFace { enabled: combo.enabled; hovered: combo.hovered; down: combo.pressed || combo.popup.visible; focusRing: combo.visualFocus }
             contentItem: Text {
@@ -96,6 +98,7 @@ Rectangle {
                 background: Rectangle { color: parent.highlighted ? Theme.hover : Theme.popover }
             }
             popup: Popup {
+                onAboutToShow: AppModel.refreshAdapters()   // an adapter plugged in since the last look is listed
                 y: combo.height
                 width: combo.width
                 implicitHeight: Math.min(contentItem.implicitHeight, 360)
@@ -109,7 +112,7 @@ Rectangle {
             visible: AppModel.link === 0 && root.list.length > 0 && root.list[Math.min(root.choice, root.list.length - 1)].spec === "custom"
             width: 260
             text: root.custom
-            onTextEdited: root.custom = text
+            onTextEdited: { root.custom = text; root.picked = "custom" }
             font { family: Theme.mono; pixelSize: 12 }
         }
 

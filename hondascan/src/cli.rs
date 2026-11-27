@@ -32,7 +32,7 @@
 use crate::actuator::{condition, TESTS};
 use crate::actuatorrun::{monotonic_clock, ActuatorRun, Reader, RunError};
 use crate::audit;
-use crate::db::Database;
+use crate::db::{Database, DtcInfo};
 use crate::hexfmt::hex_spaced_upper;
 use crate::honda::{Ecu, HondaCan, FUNCTIONAL_ID, OBD_FUNCTIONAL_ID, PROBE_ADDRESS};
 use crate::ident::{match_ecu, read_ecu_info, read_vin};
@@ -47,7 +47,7 @@ use crate::store::Store;
 use crate::transport::can::CaptureLog;
 use crate::transport::elm327::str_repr;
 use crate::transport::{modem_manager_warning, open_adapter, serial_ports, GD101_USB_ID};
-use crate::uds::{DidReader, UdsError};
+use crate::uds::{DidReader, DtcRecord, UdsError};
 use crate::write::{self, WRITES};
 use crate::writerun::WriteRun;
 use std::collections::BTreeSet;
@@ -79,7 +79,7 @@ pub enum Cmd {
     Share { action: String, out: Option<String>, yes: bool },
     Report { out: Option<String> },
     Condition { vin: Option<String>, session: Option<i64>, json: bool },
-    Dtc { systems: Vec<String>, mask: u8 },
+    Dtc { systems: Vec<String>, mask: Option<u8> }, // None: no --mask, so every record is asked for
     Health,
     Clear { system: String, yes: bool },
     Read { system: String, did: u16 },
@@ -372,7 +372,7 @@ pub fn parse_args(argv: &[String]) -> Result<Args, String> {
         }
         "dtc" => {
             let p = scan_args(rest, &Spec { valued: &["mask"], flags: &[], repeat: &[] })?;
-            Cmd::Dtc { systems: p.pos.clone(), mask: p.opt("mask").map(|s| narrowed::<u8>(s, "--mask", "byte (0..=0xFF)", int0)).transpose()?.unwrap_or(0xFF) }
+            Cmd::Dtc { systems: p.pos.clone(), mask: p.opt("mask").map(|s| narrowed::<u8>(s, "--mask", "byte (0..=0xFF)", int0)).transpose()? }
         }
         "preflight" => {
             let p = scan_args(rest, &Spec { valued: &["vin"], flags: &[], repeat: &[] })?;
@@ -495,6 +495,18 @@ pub fn parse_args(argv: &[String]) -> Result<Args, String> {
         other => return Err(format!("argument cmd: invalid choice: {other:?}")),
     };
     Ok(Args { adapter, db, log, addresses, cmd })
+}
+
+/// What `read_own_dtcs` needs of every system a scan found.
+fn found(ecus: &[Ecu]) -> impl Iterator<Item = (u32, &str, &str)> {
+    ecus.iter().map(|e| (e.address, e.system_type.as_str(), e.system.as_str()))
+}
+
+/// One trouble code record as `dtc` prints it: the code and its state, then Honda's description.
+fn dtc_lines(r: &DtcRecord, info: Option<&DtcInfo>) -> String {
+    let desc = info.map_or("(not in database)".to_string(), |i| i.description.clone());
+    let hcode = info.filter(|i| !i.honda_code.is_empty() && i.honda_code != "0-0").map_or(String::new(), |i| format!(" [{}]", i.honda_code));
+    format!("  {}-{}{hcode}  {:9}  status 0x{:02X} {}\n      {desc}", r.code, hex2(r.failure_type), r.kind(), r.status, r.flags().join(","))
 }
 
 fn resolve(ecus: &[Ecu], name: &str) -> R<Ecu> {
@@ -942,7 +954,7 @@ fn run(a: &Args, db: &Arc<Database>, adapter: &Arc<dyn crate::transport::Adapter
         Cmd::Dtc { systems, mask } => {
             let targets: Vec<Ecu> = if systems.is_empty() { ecus.clone() } else { systems.iter().map(|s| resolve(&ecus, s)).collect::<R<_>>()? };
             for e in &targets {
-                let recs = match hc.read_dtcs(e, *mask) {
+                let recs = match hc.read_own_dtcs(e, mask.unwrap_or(0xFF), found(&ecus)) {
                     Ok((_, r)) => r,
                     Err(UdsError::Io(x)) => return Err(x.into()),
                     Err(x) => {
@@ -950,11 +962,27 @@ fn run(a: &Args, db: &Arc<Database>, adapter: &Arc<dyn crate::transport::Adapter
                         continue;
                     }
                 };
-                out!(io, "{e}: {} DTC(s)", recs.len());
-                for (r, info) in &recs {
-                    let desc = info.as_ref().map_or("(not in database)".to_string(), |i| i.description.clone());
-                    let hcode = info.as_ref().filter(|i| !i.honda_code.is_empty() && i.honda_code != "0-0").map_or(String::new(), |i| format!(" [{}]", i.honda_code));
-                    out!(io, "  {}-{}{hcode}  {:9}  status 0x{:02X} {}\n      {desc}", r.code, hex2(r.failure_type), r.kind(), r.status, r.flags().join(","));
+                // as in the app: a self-test that has not run yet is not a trouble code
+                let (unfinished, codes): (Vec<_>, Vec<_>) = recs.into_iter().partition(|(r, _)| r.kind() == "incomplete");
+                out!(io, "{e}: {} DTC(s)", codes.len());
+                for (r, info) in &codes {
+                    out!(io, "{}", dtc_lines(r, info.as_ref()));
+                }
+                if !unfinished.is_empty() {
+                    // by default only their codes; a --mask asks for records by status bits, so what it let through is shown in full
+                    let what = if unfinished.len() == 1 { "self-test not completed, not a trouble code" } else { "self-tests not completed, not trouble codes" };
+                    let more = if mask.is_none() { " (--mask 0xFF shows them in full)" } else { "" };
+                    out!(io, "  {} {what}{more}:", unfinished.len());
+                    if mask.is_none() {
+                        let names: Vec<String> = unfinished.iter().map(|(r, _)| format!("{}-{}", r.code, hex2(r.failure_type))).collect();
+                        for row in names.chunks(8) {
+                            out!(io, "    {}", row.join(" "));
+                        }
+                    } else {
+                        for (r, info) in &unfinished {
+                            out!(io, "{}", dtc_lines(r, info.as_ref()));
+                        }
+                    }
                 }
             }
             Ok(0)
@@ -972,7 +1000,7 @@ fn run(a: &Args, db: &Arc<Database>, adapter: &Arc<dyn crate::transport::Adapter
             let mut any_stored = false;
             let mut silent = 0;
             for e in &ecus {
-                match hc.read_dtcs(e, 0xFF) {
+                match hc.read_own_dtcs(e, 0xFF, found(&ecus)) {
                     Ok((_, recs)) => {
                         let confirmed = recs.iter().filter(|(r, _)| r.kind() == "confirmed").count();
                         let pending = recs.iter().filter(|(r, _)| r.kind() == "pending").count();
@@ -1067,8 +1095,8 @@ fn memory(hc: &mut HondaCan, cmd: &Cmd, addresses: Option<&[u32]>, io: &mut Io) 
             // the ECU ID is read through the profile's system, whichever row `e` is
             let systems: Vec<String> = ecus.iter().filter(|x| x.address == e.address).map(|x| x.system.clone()).collect();
             let sys = profile_system(profile, &systems).map_err(|x| Fail::Error(x.0))?;
-            let db = hc.db.clone();
-            let info = read_ecu_info(&db, sys, hc.client(e.address))?;
+            let live = LiveData::new(hc.db.clone());
+            let info = read_ecu_info(&live, sys, hc.client(e.address))?;
             check_ecu(profile, info["ecu_model"].as_str(), false).map_err(|x| Fail::Error(x.0))?;
         }
     }

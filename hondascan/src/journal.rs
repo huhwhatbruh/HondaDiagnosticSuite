@@ -344,17 +344,18 @@ pub fn render_vehicle(vin: &str, sessions: &[Value], codes: &[Value], trends: &M
     l.extend(arr(get(now, "notes")).iter().map(|n| format!("- worth a look: {}", py(n))));
 
     let recent = &sm[..sm.len().min(RECENT)];
-    let mut seen: Vec<(String, usize, String)> = vec![]; // pattern -> (count, newest wording)
+    let mut seen: Vec<(String, usize, String)> = vec![]; // pattern -> (sessions, newest wording)
     for x in recent {
-        let mut once: Vec<String> = vec![];
+        // once per session and pattern: one session's notes for several engine speeds differ only in numbers
+        let mut once: Vec<(String, String)> = vec![];
         for n in arr(get(x, "notes")) {
             let n = py(n);
-            if !once.contains(&n) {
-                once.push(n);
+            let pt = pattern(&n);
+            if !once.iter().any(|(k, _)| *k == pt) {
+                once.push((pt, n));
             }
         }
-        for n in once {
-            let pt = pattern(&n);
+        for (pt, n) in once {
             match seen.iter_mut().find(|(k, _, _)| *k == pt) {
                 Some(e) => e.1 += 1,
                 None => seen.push((pt, 1, n)),
