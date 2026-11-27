@@ -60,7 +60,7 @@ The desktop app `hondascan-gui` wraps the same scanner.
 Each [release](https://github.com/huhwhatbruh/HondaDiagnosticSuite/releases/tag/v0.8.2) has four archives:
 `hondascan-0.8.2-linux-x86_64.tar.gz`, `hondascan-0.8.2-windows-x86_64.zip` (with the desktop app),
 `hondascan-0.8.2-windows-i686.zip` (command line only, for 32-bit J2534 DLLs) and
-`hondascan-0.8.2-macos.tar.gz` (macOS on Apple silicon, `Hondascan.app`; new and not yet started on a Mac, see the wiki's Getting started). There is nothing to install for the program
+`hondascan-0.8.2-macos.tar.gz` (macOS on Apple silicon, `Hondascan.app`; see the wiki's Getting started). There is nothing to install for the program
 itself: no Python, no Rust, no Wine. Which Linux, Windows and macOS versions run it, the udev rule, the C compiler the GD101's J2534 mode
 needs and the serial and CAN set-up are on [Getting started](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Getting-Started).
 
@@ -98,7 +98,7 @@ Field notes from the car (the misfires with no code, the ABS that never answered
 
 - **Other Hondas, any adapter.** A scan and a code read is already valuable: [Contributing a vehicle](https://github.com/huhwhatbruh/HondaDiagnosticSuite/wiki/Contributing-a-Vehicle).
 - **Windows testing.** Both builds have run on real Windows, one against a car. A scan and a code read with the adapter you have, especially a 32-bit J2534 DLL with the 32-bit build, tells us what is left.
-- **macOS.** Run the new archive on a Mac and tell us whether it starts: it was cross-built and checked by structure only. A source build on a Mac lists USB serial ports and has opened an XHorse M-VCI (see Contributors); an ELM327 on a Mac is untried.
+- **macOS.** The archive has run on Macs with an XHorse M-VCI (see Contributors) and with ELM327 adapters, as reported by the people who ran it. More reports are welcome, especially from adapters that run above 230400 baud.
 - **Bugs and ideas:** the [issue tracker](../../issues).
 
 *We all have a right to repair. Nothing on a car should be proprietary.*
